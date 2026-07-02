@@ -47,7 +47,7 @@ export default function PremiumNav() {
         initial={{ x: '-50%', y: -18, opacity: 0 }}
         animate={{ x: '-50%', y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 90, damping: 18 }}
-        className="glass-depth-subtle fixed left-1/2 top-5 z-50 flex items-center gap-1 rounded-full px-2 py-2"
+        className="glass-depth-subtle fixed left-1/2 top-3 z-50 flex w-[calc(100vw-1rem)] max-w-max items-center gap-1 overflow-x-auto rounded-full px-2 py-2 sm:top-5 sm:w-auto"
       >
         {items.map((item) => {
           const active = pathname === item.href
@@ -66,7 +66,7 @@ export default function PremiumNav() {
               onClick={() => {
                 if (!active) setPendingHref(item.href)
               }}
-              className={`relative flex h-10 items-center gap-2 rounded-full px-4 text-xs font-medium transition active:scale-95 ${
+              className={`relative flex h-10 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-medium transition active:scale-95 sm:px-4 ${
                 active || pending ? 'text-white' : 'text-white/48 hover:text-white/84'
               } ${pending ? 'bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]' : ''}`}
             >
@@ -77,7 +77,7 @@ export default function PremiumNav() {
                 />
               ) : null}
               <Icon className="relative h-4 w-4" strokeWidth={1.6} />
-              <span className="relative">{item.label}</span>
+              <span className="relative hidden sm:inline">{item.label}</span>
             </Link>
           )
         })}

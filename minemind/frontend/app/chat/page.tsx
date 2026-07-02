@@ -198,19 +198,19 @@ function ChatContent() {
   })
 
   return (
-    <main className="premium-bg noise-mask relative min-h-screen overflow-hidden text-white">
+    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden text-white">
       <PremiumNav />
       <BackToDashboard />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_24%,rgba(215,183,121,0.12),transparent_28%),radial-gradient(circle_at_84%_58%,rgba(96,119,139,0.16),transparent_30%)]" />
       <div className="pointer-events-none absolute left-1/2 top-24 h-px w-[78vw] -translate-x-1/2 bg-gradient-to-r from-transparent via-white/18 to-transparent" />
 
-      <section className="relative z-10 mx-auto grid h-screen max-w-7xl grid-cols-1 gap-5 px-6 pb-6 pt-24 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="glass-depth flex min-w-0 flex-col overflow-hidden rounded-[32px]">
-          <header className="border-b border-white/10 px-6 py-5">
+      <section className="relative z-10 mx-auto grid min-h-[100dvh] max-w-7xl grid-cols-1 gap-4 px-3 pb-4 pt-20 sm:px-5 sm:pt-24 lg:h-screen lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5 lg:px-6 lg:pb-6">
+        <div className="glass-depth flex min-h-[calc(100dvh-6rem)] min-w-0 flex-col overflow-hidden rounded-[24px] sm:rounded-[32px] lg:min-h-0">
+          <header className="border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="tracked-label text-[10px] text-[#d7b779]/70">Ask MineMind</p>
-                <h1 className="mt-2 text-3xl font-semibold text-white">Operational memory chat</h1>
+                <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Operational memory chat</h1>
               </div>
               <div className="flex flex-wrap gap-2">
                 <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-xs text-white/54">
@@ -226,7 +226,7 @@ function ChatContent() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-auto px-6 py-6">
+          <div className="flex-1 overflow-auto px-4 py-5 sm:px-6 sm:py-6">
           {messages.length === 0 ? (
             <div className="grid min-h-full place-items-center">
               <div className="w-full max-w-4xl">
@@ -239,13 +239,13 @@ function ChatContent() {
                   <div className="mx-auto grid h-16 w-16 place-items-center rounded-[24px] border border-[#d7b779]/20 bg-[#d7b779]/10 text-[#d7b779] shadow-[0_0_60px_rgba(215,183,121,0.16)]">
                     <Sparkles className="h-7 w-7" strokeWidth={1.5} />
                   </div>
-                  <h2 className="mt-6 text-4xl font-semibold text-white">Ask from the mine memory.</h2>
-                  <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/48">
+                  <h2 className="mt-6 text-3xl font-semibold text-white sm:text-4xl">Ask from the mine memory.</h2>
+                  <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-white/48 sm:text-base sm:leading-7">
                     Query uploaded reports, regulations, maintenance notes, and recalled incident context from one focused command surface.
                   </p>
                 </motion.div>
 
-                <div className="mt-9 grid gap-3 md:grid-cols-2">
+                <div className="mt-8 grid gap-3 md:grid-cols-2">
                   {suggestions.map((suggestion, index) => {
                     const Icon = suggestion.icon
                     return (
@@ -256,7 +256,7 @@ function ChatContent() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.08 * index, duration: 0.45 }}
                         onClick={() => void sendQuestion(suggestion.prompt)}
-                        className="group rounded-[24px] border border-white/10 bg-white/[0.045] p-5 text-left transition hover:border-[#d7b779]/35 hover:bg-white/[0.075] hover:shadow-[0_24px_90px_rgba(215,183,121,0.08)]"
+                        className="group rounded-[22px] border border-white/10 bg-white/[0.045] p-4 text-left transition hover:border-[#d7b779]/35 hover:bg-white/[0.075] hover:shadow-[0_24px_90px_rgba(215,183,121,0.08)] sm:rounded-[24px] sm:p-5"
                       >
                         <div className="flex items-center gap-3">
                           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/[0.07] text-[#d7b779] transition group-hover:bg-[#d7b779] group-hover:text-black">
@@ -305,15 +305,15 @@ function ChatContent() {
           <div ref={bottomRef} />
           </div>
 
-          <div className="border-t border-white/10 bg-black/18 p-3">
+          <div className="border-t border-white/10 bg-black/18 p-2 sm:p-3">
             <form
-              className="glass-depth amber-aura flex items-center gap-3 rounded-[28px] p-2"
+              className="glass-depth amber-aura flex items-center gap-2 rounded-[22px] p-2 sm:gap-3 sm:rounded-[28px]"
               onSubmit={(event) => {
                 event.preventDefault()
                 void sendQuestion(input)
               }}
             >
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/52">
+              <div className="hidden h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/52 sm:grid">
                 <BrainCircuit className="h-5 w-5" strokeWidth={1.55} />
               </div>
               <input
@@ -322,7 +322,7 @@ function ChatContent() {
                 disabled={loading}
                 placeholder={inputPlaceholder}
                 title={inputPlaceholder}
-                className="soft-focus-ring h-14 min-w-0 flex-1 bg-transparent px-1 text-[15px] text-white placeholder:text-white/34 disabled:opacity-60"
+                className="soft-focus-ring h-12 min-w-0 flex-1 bg-transparent px-2 text-sm text-white placeholder:text-white/34 disabled:opacity-60 sm:h-14 sm:px-1 sm:text-[15px]"
               />
               <button
                 type="submit"

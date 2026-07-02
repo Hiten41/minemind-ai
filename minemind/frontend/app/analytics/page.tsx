@@ -132,7 +132,7 @@ function SectionShell({
 
 function LoadingState() {
   return (
-    <main className="premium-bg noise-mask relative grid min-h-screen place-items-center overflow-hidden px-6 text-white">
+    <main className="premium-bg noise-mask relative grid min-h-screen place-items-center overflow-x-hidden px-4 text-white sm:px-6">
       <PremiumNav />
       <BackToDashboard />
       <div className="relative z-10 text-center">
@@ -186,7 +186,7 @@ export default function AnalyticsPage() {
       variants={pageVariants}
       initial="hidden"
       animate="show"
-      className="premium-bg noise-mask relative min-h-screen overflow-hidden px-6 pb-12 pt-28 text-white"
+      className="premium-bg noise-mask relative min-h-screen overflow-x-hidden px-4 pb-10 pt-24 text-white sm:px-6 sm:pb-12 sm:pt-28"
     >
       <PremiumNav />
       <BackToDashboard />
@@ -197,7 +197,7 @@ export default function AnalyticsPage() {
         <motion.header variants={itemVariants}>
           <div>
             <p className="tracked-label text-[10px] text-[#d7b779]/70">Signal Analytics</p>
-            <h1 className="metal-text mt-4 text-5xl font-bold leading-none tracking-tight md:text-6xl">
+            <h1 className="metal-text mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl md:text-6xl">
               Memory intelligence.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/48">

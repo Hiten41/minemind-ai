@@ -30,7 +30,7 @@ export default function UploadZone({ file, onFile }: UploadZoneProps) {
       whileHover={{ scale: 1.01 }}
       animate={{ scale: isDragActive ? 0.98 : 1 }}
       transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-      className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-12 text-center backdrop-blur-xl transition-colors duration-500 ${
+      className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-6 text-center backdrop-blur-xl transition-colors duration-500 sm:p-12 ${
         isDragActive
           ? 'border-[#c8dcff]/45 bg-white/10 shadow-[0_0_42px_rgba(200,220,255,0.14),inset_0_0_34px_rgba(255,255,255,0.06)]'
           : 'border-white/10 bg-white/5 shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.1)] hover:border-white/20 hover:bg-white/10'

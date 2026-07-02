@@ -143,7 +143,7 @@ export default function DocumentsPage() {
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_50%_10%,rgba(255,255,255,0.12),transparent_28%),linear-gradient(145deg,#000_0%,#070707_46%,#0a0a0a_100%)] px-6 pb-12 pt-28 text-white antialiased"
+      className="relative min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_10%,rgba(255,255,255,0.12),transparent_28%),linear-gradient(145deg,#000_0%,#070707_46%,#0a0a0a_100%)] px-4 pb-10 pt-24 text-white antialiased sm:px-6 sm:pb-12 sm:pt-28"
       onMouseMove={(event) => {
         const x = event.clientX / window.innerWidth - 0.5
         const y = event.clientY / window.innerHeight - 0.5
@@ -170,7 +170,7 @@ export default function DocumentsPage() {
         <p className="tracked-label text-[10px] text-white/38">Files</p>
         <div className="mt-4 flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div>
-            <h1 className="metal-text text-5xl font-bold leading-none tracking-tight md:text-6xl">
+            <h1 className="metal-text text-4xl font-bold leading-tight tracking-tight sm:text-5xl md:text-6xl">
               Memory library.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-white/46">
@@ -260,7 +260,7 @@ export default function DocumentsPage() {
           </div>
 
           {documents.length === 0 ? (
-            <div className="grid min-h-[420px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-10 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl">
+          <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
               <div>
                 <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/[0.05] text-white/58">
                   <Layers3 className="h-7 w-7" strokeWidth={1.35} />

@@ -19,11 +19,11 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="flex max-w-[82%] items-start gap-3">
-          <div className="rounded-[22px] bg-[#d7b779] px-5 py-3 text-sm leading-6 text-black shadow-[0_18px_70px_rgba(215,183,121,0.16)]">
+        <div className="flex max-w-[94%] items-start gap-2 sm:max-w-[82%] sm:gap-3">
+          <div className="min-w-0 break-words rounded-[20px] bg-[#d7b779] px-4 py-3 text-sm leading-6 text-black shadow-[0_18px_70px_rgba(215,183,121,0.16)] sm:rounded-[22px] sm:px-5">
             {message.content}
           </div>
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-white/62">
+          <div className="hidden h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-white/62 sm:grid">
             <UserRound className="h-4 w-4" strokeWidth={1.5} />
           </div>
         </div>
@@ -32,17 +32,17 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className="flex max-w-[92%] items-start gap-3">
-      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-[#d7b779]/20 bg-[#d7b779]/10 text-[#d7b779]">
+    <div className="flex max-w-full items-start gap-2 sm:max-w-[92%] sm:gap-3">
+      <div className="hidden h-10 w-10 shrink-0 place-items-center rounded-2xl border border-[#d7b779]/20 bg-[#d7b779]/10 text-[#d7b779] sm:grid">
         <Bot className="h-4 w-4" strokeWidth={1.5} />
       </div>
-      <div className="rounded-[26px] border border-white/10 bg-white/[0.055] px-5 py-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+      <div className="min-w-0 rounded-[22px] border border-white/10 bg-white/[0.055] px-4 py-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-xl sm:rounded-[26px] sm:px-5">
       {message.query_type === 'temporal' ? (
         <div className="mb-3 inline-flex rounded-full border border-white/10 bg-white/[0.045] px-3 py-1 text-xs font-medium text-white/46">
           🕐 Temporal Query
         </div>
       ) : null}
-      <p className="whitespace-pre-wrap text-sm leading-7 text-white/82">{message.content}</p>
+      <p className="whitespace-pre-wrap break-words text-sm leading-7 text-white/82">{message.content}</p>
       {message.reasoning ? (
         <div className="mt-4">
           <button
@@ -69,7 +69,7 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
               className="block w-full rounded-2xl border border-white/10 bg-black/18 p-3 text-left text-sm transition hover:border-[#d7b779]/35"
             >
               <span className="font-semibold text-white/78">{evidenceTitle(source.title, index)}</span>
-              <span className="mt-1 block text-white/42">{source.excerpt}</span>
+              <span className="mt-1 block break-words text-white/42">{source.excerpt}</span>
             </button>
           ))}
         </div>

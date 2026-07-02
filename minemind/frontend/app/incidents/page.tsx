@@ -58,7 +58,7 @@ function toIncidentCase(doc: Document, index: number): IncidentCase {
 
 function LoadingBlock() {
   return (
-    <div className="rounded-[32px] border border-white/10 bg-white/[0.045] p-8 text-center shadow-[0_28px_110px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl">
+    <div className="rounded-[28px] border border-white/10 bg-white/[0.045] p-6 text-center shadow-[0_28px_110px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl sm:rounded-[32px] sm:p-8">
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-white/62">
         <AlertTriangle className="h-6 w-6 animate-pulse" strokeWidth={1.45} />
       </div>
@@ -144,7 +144,7 @@ export default function IncidentsPage() {
       variants={pageVariants}
       initial="hidden"
       animate="show"
-      className="premium-bg noise-mask relative min-h-screen overflow-hidden px-6 pb-12 pt-28 text-white"
+      className="premium-bg noise-mask relative min-h-screen overflow-x-hidden px-4 pb-10 pt-24 text-white sm:px-6 sm:pb-12 sm:pt-28"
     >
       <PremiumNav />
       <BackToDashboard />
@@ -156,7 +156,7 @@ export default function IncidentsPage() {
         <motion.header variants={itemVariants} className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
           <div>
             <p className="tracked-label text-[10px] text-white/40">Cases</p>
-            <h1 className="metal-text mt-4 text-5xl font-bold leading-none tracking-tight md:text-6xl">
+            <h1 className="metal-text mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl md:text-6xl">
               Incident memory.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/48">
@@ -241,7 +241,7 @@ export default function IncidentsPage() {
             ) : (
               <motion.div
                 variants={itemVariants}
-                className="grid min-h-[480px] place-items-center rounded-[36px] border border-white/10 bg-white/[0.045] p-10 text-center shadow-[0_28px_110px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl"
+                className="grid min-h-[340px] place-items-center rounded-[30px] border border-white/10 bg-white/[0.045] p-6 text-center shadow-[0_28px_110px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl sm:min-h-[480px] sm:rounded-[36px] sm:p-10"
               >
                 <div>
                   <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/[0.06] text-white/62">

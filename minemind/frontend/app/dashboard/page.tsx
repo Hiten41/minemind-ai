@@ -64,7 +64,7 @@ function FloatingMetric({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      className={`fixed z-30 ${className}`}
+      className={`fixed z-30 hidden md:block ${className}`}
     >
       <p className="tracked-label text-[10px] text-white/38">{label}</p>
       <p className="mt-2 text-sm font-medium text-white/70">{value}</p>
@@ -204,7 +204,7 @@ export default function DashboardPage() {
   })()
 
   return (
-    <main className="premium-bg noise-mask relative h-screen min-h-[760px] overflow-hidden text-white">
+    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden text-white md:h-screen md:min-h-[760px] md:overflow-hidden">
       <PremiumNav />
       <MemoryUploadRail onUploadComplete={refreshDashboardData} />
 
@@ -239,7 +239,7 @@ export default function DashboardPage() {
         className="bottom-10 right-10 text-right"
       />
 
-      <section className="fixed left-10 top-44 z-30 w-[min(360px,calc(100vw-40px))]">
+      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pt-[520px] md:fixed md:left-10 md:top-44 md:w-[min(360px,calc(100vw-40px))] md:pt-0">
         <div className="glass-depth-subtle rounded-[26px] border border-white/10 bg-black/18 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -296,18 +296,18 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="relative z-10 flex h-full flex-col items-center justify-center px-8 pb-28 pt-24">
+      <section className="absolute inset-x-0 top-0 z-10 flex min-h-[520px] flex-col items-center px-4 pb-24 pt-24 md:relative md:h-full md:min-h-0 md:justify-center md:px-8 md:pb-28">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-none absolute top-[13vh] max-w-3xl text-center"
+          className="pointer-events-none absolute top-24 max-w-[calc(100vw-2rem)] text-center md:top-[13vh] md:max-w-3xl"
         >
           <p className="tracked-label text-[11px] text-[#d7b779]/70">MineMind AI</p>
-          <h1 className="metal-text mt-4 text-5xl font-bold leading-[0.96] tracking-tight md:text-6xl">
+          <h1 className="metal-text mt-4 text-4xl font-bold leading-[1.02] tracking-tight sm:text-5xl md:text-6xl">
             Mining memory, made spatial.
           </h1>
-          <p className="mx-auto mt-5 max-w-md text-base leading-7 text-white/48">
+          <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-white/48 sm:text-base sm:leading-7">
             A quiet intelligence layer for incidents, regulations, equipment history, and operational knowledge.
           </p>
         </motion.div>
@@ -321,7 +321,7 @@ export default function DashboardPage() {
             scale: isDraggingFile ? 0.96 : 1
           }}
           transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute left-1/2 top-[54%] h-[58vh] max-h-[590px] min-h-[420px] w-[min(78vw,880px)]"
+          className="absolute left-1/2 top-[60%] h-[260px] w-[min(92vw,560px)] sm:h-[340px] md:top-[54%] md:h-[58vh] md:max-h-[590px] md:min-h-[420px] md:w-[min(78vw,880px)]"
         >
           <motion.div
             initial={false}
@@ -351,7 +351,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
           transition={{ delay: 0.65 }}
-          className="glass-depth-subtle fixed right-[13vw] top-[34vh] z-30 flex items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
+          className="glass-depth-subtle fixed right-4 top-[430px] z-30 hidden items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86 sm:flex md:right-[13vw] md:top-[34vh]"
         >
           <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
           Optimize Memory
@@ -361,23 +361,23 @@ export default function DashboardPage() {
           initial={{ x: '-50%', opacity: 0, y: 28, scale: 0.98 }}
           animate={{ x: '-50%', opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 88, damping: 20, delay: 0.28 }}
-          className="glass-depth amber-aura fixed bottom-[8vh] left-1/2 z-40 w-[min(760px,calc(100vw-44px))] rounded-[28px] p-2"
+          className="glass-depth amber-aura fixed bottom-5 left-1/2 z-40 w-[min(760px,calc(100vw-1.5rem))] rounded-[24px] p-2 md:bottom-[8vh] md:rounded-[28px]"
         >
           <form
-            className="flex items-center gap-3"
+            className="flex items-center gap-2 sm:gap-3"
             onSubmit={(event) => {
               event.preventDefault()
               ask()
             }}
           >
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/58">
+            <div className="hidden h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[0.07] text-white/58 sm:grid">
               <Search className="h-5 w-5" strokeWidth={1.55} />
             </div>
             <input
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               placeholder="Ask MineMind about incidents, regulations, or equipment history"
-              className="soft-focus-ring h-14 flex-1 bg-transparent text-[15px] text-white placeholder:text-white/34"
+              className="soft-focus-ring h-12 min-w-0 flex-1 bg-transparent px-2 text-sm text-white placeholder:text-white/34 sm:h-14 sm:px-0 sm:text-[15px]"
             />
             <button
               type="submit"
@@ -401,7 +401,7 @@ export default function DashboardPage() {
           initial={{ x: '-50%', opacity: 0 }}
           animate={{ x: '-50%', opacity: 1 }}
           transition={{ delay: 0.9 }}
-          className="fixed bottom-[2.8vh] left-1/2 z-30 flex items-center gap-2 text-sm text-white/42 transition hover:text-white/80 active:scale-95"
+          className="fixed bottom-1 left-1/2 z-30 hidden items-center gap-2 text-sm text-white/42 transition hover:text-white/80 active:scale-95 md:flex md:bottom-[2.8vh]"
         >
           Manage uploaded files
           <UploadCloud className="h-4 w-4" strokeWidth={1.6} />

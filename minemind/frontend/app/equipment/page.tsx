@@ -119,11 +119,11 @@ export default function EquipmentPage() {
   }, [error, loading])
 
   return (
-    <main className="premium-bg min-h-screen overflow-hidden pt-24 text-white">
+    <main className="premium-bg min-h-screen overflow-x-hidden pt-20 text-white sm:pt-24">
       <PremiumNav />
       <BackToDashboard />
-      <div className="grid h-[calc(100vh-6rem)] grid-cols-[1fr_360px] gap-6 overflow-hidden p-8">
-        <div className="grid auto-rows-max grid-cols-2 gap-6 overflow-auto">
+      <div className="grid min-h-[calc(100dvh-5rem)] grid-cols-1 gap-5 p-4 sm:p-6 lg:h-[calc(100vh-6rem)] lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:overflow-hidden lg:p-8">
+        <div className="grid auto-rows-max grid-cols-1 gap-4 overflow-visible sm:grid-cols-2 lg:gap-6 lg:overflow-auto">
           {items.length > 0 ? items.map((item) => (
             <EquipmentCard
               key={item.id}
@@ -132,12 +132,12 @@ export default function EquipmentPage() {
               onClick={() => setSelectedEquipment(item)}
             />
           )) : (
-            <div className="col-span-2 rounded-xl border border-card-border bg-card p-6 text-[#888888]">
+            <div className="rounded-xl border border-card-border bg-card p-6 text-[#888888] sm:col-span-2">
               {emptyLabel}
             </div>
           )}
         </div>
-        <aside className="rounded-xl border border-card-border bg-card p-6">
+        <aside className="rounded-xl border border-card-border bg-card p-5 sm:p-6 lg:h-fit">
           {selectedEquipment ? (
             <div>
               <div className="flex items-start justify-between gap-4">
