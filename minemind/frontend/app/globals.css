@@ -21,6 +21,25 @@ body {
   background: rgba(215, 183, 121, 0.32);
 }
 
+input,
+textarea {
+  background-color: transparent;
+  caret-color: #f6d08a;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #f6d08a;
+  box-shadow: 0 0 0 1000px transparent inset;
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+  transition: background-color 999999s ease-in-out 0s;
+}
+
 .premium-bg {
   background:
     radial-gradient(circle at 50% 42%, rgba(210, 190, 150, 0.14), transparent 24%),

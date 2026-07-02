@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { LockKeyhole, Mail, Phone, UserRound } from 'lucide-react'
+import { Loader2, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
@@ -17,11 +17,14 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [openingApp, setOpeningApp] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (loading || openingApp) return
     setLoading(true)
+    setOpeningApp(false)
     setError('')
     try {
       if (mode === 'register') {
@@ -29,9 +32,11 @@ export default function LoginPage() {
       } else {
         await loginUser({ identifier, password })
       }
+      setOpeningApp(true)
       router.replace('/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed')
+      setOpeningApp(false)
     } finally {
       setLoading(false)
     }
@@ -97,10 +102,13 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
-            className="mt-2 w-full rounded-full bg-[#f59e0b] px-5 py-4 text-sm font-semibold text-black shadow-[0_0_42px_rgba(245,158,11,0.2)] transition hover:bg-white active:scale-[0.98] disabled:cursor-wait disabled:opacity-55"
+            disabled={loading || openingApp}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-[#f59e0b]/35 bg-[#f59e0b]/10 px-5 py-4 text-sm font-semibold text-[#f6d08a] shadow-[0_0_42px_rgba(245,158,11,0.12),inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#f59e0b]/55 hover:bg-[#f59e0b]/16 hover:text-white active:scale-[0.98] disabled:cursor-wait disabled:opacity-75"
           >
-            {loading ? 'Securing...' : mode === 'login' ? 'Enter MineMind' : 'Create Private Vault'}
+            {loading || openingApp ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.8} />
+            ) : null}
+            {openingApp ? 'Opening MineMind...' : loading ? 'Securing access...' : mode === 'login' ? 'Enter MineMind' : 'Create Private Vault'}
           </button>
         </form>
       </motion.section>

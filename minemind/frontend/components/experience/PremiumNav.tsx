@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { BarChart3, FileText, LogOut, MessageCircle, Mountain, UploadCloud, Wrench } from 'lucide-react'
+import { BarChart3, FileText, Loader2, LogOut, MessageCircle, Mountain, UploadCloud, Wrench } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
@@ -26,12 +26,6 @@ export default function PremiumNav() {
     setPendingHref(null)
   }, [pathname])
 
-  useEffect(() => {
-    if (!pendingHref) return
-    const timer = window.setTimeout(() => setPendingHref(null), 1200)
-    return () => window.clearTimeout(timer)
-  }, [pendingHref])
-
   return (
     <>
       {pendingHref ? (
@@ -52,6 +46,7 @@ export default function PremiumNav() {
         {items.map((item) => {
           const active = pathname === item.href
           const pending = pendingHref === item.href
+          const navigating = Boolean(pendingHref)
           const Icon = item.icon
           return (
             <Link
@@ -68,7 +63,9 @@ export default function PremiumNav() {
               }}
               className={`relative flex h-10 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-medium transition active:scale-95 sm:px-4 ${
                 active || pending ? 'text-white' : 'text-white/48 hover:text-white/84'
-              } ${pending ? 'bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]' : ''}`}
+              } ${pending ? 'bg-[#f59e0b]/12 shadow-[0_0_30px_rgba(245,158,11,0.16),inset_0_1px_0_rgba(255,255,255,0.16)]' : ''} ${
+                navigating && !pending && !active ? 'pointer-events-none opacity-45' : ''
+              }`}
             >
               {active ? (
                 <motion.span
@@ -76,8 +73,12 @@ export default function PremiumNav() {
                   className="absolute inset-0 rounded-full bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]"
                 />
               ) : null}
-              <Icon className="relative h-4 w-4" strokeWidth={1.6} />
-              <span className="relative hidden sm:inline">{item.label}</span>
+              {pending ? (
+                <Loader2 className="relative h-4 w-4 animate-spin text-[#f59e0b]" strokeWidth={1.8} />
+              ) : (
+                <Icon className="relative h-4 w-4" strokeWidth={1.6} />
+              )}
+              <span className="relative hidden sm:inline">{pending ? 'Opening...' : item.label}</span>
             </Link>
           )
         })}
