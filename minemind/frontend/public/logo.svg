@@ -1,0 +1,22 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">MineMind AI logo</title>
+  <desc id="desc">A gold mining helmet with neural circuit paths on a dark circular background.</desc>
+  <rect width="200" height="200" rx="44" fill="#050508"/>
+  <circle cx="100" cy="100" r="78" fill="#0B0B0D" stroke="#f59e0b" stroke-opacity="0.28" stroke-width="2"/>
+  <path d="M48 112C49.8 78.8 72.3 54 100 54C127.7 54 150.2 78.8 152 112H48Z" fill="#f59e0b"/>
+  <path d="M59 111C61.7 86.3 78.1 68 100 68C121.9 68 138.3 86.3 141 111H59Z" fill="#111114" fill-opacity="0.9"/>
+  <path d="M44 116H156C162.6 116 168 121.4 168 128C168 134.6 162.6 140 156 140H44C37.4 140 32 134.6 32 128C32 121.4 37.4 116 44 116Z" fill="#f59e0b"/>
+  <path d="M53 124H147C149.2 124 151 125.8 151 128C151 130.2 149.2 132 147 132H53C50.8 132 49 130.2 49 128C49 125.8 50.8 124 53 124Z" fill="#050508" fill-opacity="0.82"/>
+  <path d="M89 52H111V104H89V52Z" fill="#f59e0b"/>
+  <rect x="84" y="42" width="32" height="22" rx="8" fill="#f59e0b"/>
+  <rect x="91" y="48" width="18" height="10" rx="4" fill="#050508" fill-opacity="0.86"/>
+  <path d="M75 101C75 86.1 85.8 76 100 76C114.2 76 125 86.1 125 101" stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
+  <path d="M79 100C83 93 89.1 89 96 89C101.1 89 105.3 91 109 95C112 92.5 116 91.2 121 91.1" stroke="#f59e0b" stroke-opacity="0.96" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M82 105H94L101 98H114" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M95 83V96M109 95V107M122 91V103" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="95" cy="83" r="4" fill="#f59e0b"/>
+  <circle cx="101" cy="98" r="4" fill="#f59e0b"/>
+  <circle cx="114" cy="95" r="4" fill="#f59e0b"/>
+  <circle cx="122" cy="103" r="4" fill="#f59e0b"/>
+  <path d="M55 150L79 136M145 150L121 136" stroke="#f59e0b" stroke-opacity="0.65" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -303,12 +303,15 @@ export default function DashboardPage() {
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
           className="pointer-events-none absolute top-24 max-w-[calc(100vw-2rem)] text-center md:top-[13vh] md:max-w-3xl"
         >
-          <p className="tracked-label text-[11px] text-[#d7b779]/70">MineMind AI</p>
+          <div className="mx-auto flex w-fit items-center gap-3 rounded-full border border-[#f59e0b]/20 bg-black/24 px-4 py-2 shadow-[0_0_44px_rgba(245,158,11,0.12)] backdrop-blur-xl">
+            <img src="/logo.svg" alt="MineMind AI logo" className="h-8 w-8 rounded-xl" />
+            <span className="tracked-label text-[11px] text-[#f59e0b]/78">MineMind AI</span>
+          </div>
           <h1 className="metal-text mt-4 text-4xl font-bold leading-[1.02] tracking-tight sm:text-5xl md:text-6xl">
-            Mining memory, made spatial.
+            The operating brain for a mine
           </h1>
           <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-white/48 sm:text-base sm:leading-7">
-            A quiet intelligence layer for incidents, regulations, equipment history, and operational knowledge.
+            Permanent AI memory for mining operations. Upload regulations, manuals, and incident reports &mdash; MineMind remembers everything forever and answers safety questions with evidence.
           </p>
         </motion.div>
 
