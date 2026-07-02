@@ -7,10 +7,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    disk:
-      name: minemind-data
-      mountPath: /data/minemind
-      sizeGB: 1
     envVars:
       - key: APP_ENV
         value: production
@@ -19,7 +15,7 @@ services:
       - key: AUTH_SECRET
         generateValue: true
       - key: MINEMIND_STORAGE_DIR
-        value: /data/minemind
+        value: /tmp/minemind
       - key: LLM_PROVIDER
         value: groq
       - key: LLM_MODEL
