@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+cognee[ollama]
+openai
+pymupdf
+pytesseract
+Pillow
+python-docx
+python-multipart
+python-dotenv
+requests
+beautifulsoup4
+pydantic
+aiofiles
