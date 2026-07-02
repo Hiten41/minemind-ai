@@ -37,7 +37,8 @@ AUTH_SECRET = (
 )
 
 FRONTEND_ORIGINS = _csv_env("FRONTEND_ORIGINS")
-if IS_PRODUCTION and not FRONTEND_ORIGINS:
-    raise RuntimeError("FRONTEND_ORIGINS must be set for production deployment")
+FRONTEND_ORIGIN_REGEX = os.getenv("FRONTEND_ORIGIN_REGEX", "").strip()
+if IS_PRODUCTION and not FRONTEND_ORIGINS and not FRONTEND_ORIGIN_REGEX:
+    raise RuntimeError("FRONTEND_ORIGINS or FRONTEND_ORIGIN_REGEX must be set for production deployment")
 
 CORS_LOCALHOST_REGEX = r"http://(localhost|127\.0\.0\.1):\d+"

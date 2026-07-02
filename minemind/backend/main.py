@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api import alerts, analytics, auth, forget, graph, improve, intelligence, query, upload
 from services.auth_service import init_auth_store
 from services.cognee_service import initialize_cognee
-from services.settings import CORS_LOCALHOST_REGEX, FRONTEND_ORIGINS, IS_PRODUCTION
+from services.settings import CORS_LOCALHOST_REGEX, FRONTEND_ORIGINS, FRONTEND_ORIGIN_REGEX, IS_PRODUCTION
 
 
 @asynccontextmanager
@@ -30,6 +30,8 @@ cors_options = {
 }
 if not IS_PRODUCTION and not FRONTEND_ORIGINS:
     cors_options["allow_origin_regex"] = CORS_LOCALHOST_REGEX
+elif FRONTEND_ORIGIN_REGEX:
+    cors_options["allow_origin_regex"] = FRONTEND_ORIGIN_REGEX
 
 app.add_middleware(CORSMiddleware, **cors_options)
 

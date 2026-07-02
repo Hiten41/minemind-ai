@@ -2,6 +2,13 @@
 
 MineMind is ready to deploy as two services: a Next.js frontend and a FastAPI backend.
 
+## Recommended Hosting
+
+- Backend: Render Blueprint using the root `render.yaml`.
+- Frontend: Vercel project with root directory `minemind/frontend`.
+
+Deploy the backend first so you can copy its public URL into the Vercel frontend environment.
+
 ## Frontend
 
 Set this environment variable on the frontend host:
@@ -24,6 +31,22 @@ npm run start
 ```
 
 ## Backend
+
+If using Render Blueprint, create a new Blueprint from this GitHub repo. The root `render.yaml` already sets:
+
+- Backend root directory: `minemind/backend`
+- Build command: `pip install -r requirements.txt`
+- Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Persistent disk at `/data/minemind`
+- CORS regex for Vercel preview/production domains
+
+You still need to add these secret values in Render:
+
+```dotenv
+GROQ_API_KEY=replace-with-your-groq-key
+COGNEE_BASE_URL=https://your-cognee-tenant.aws.cognee.ai
+COGNEE_API_KEY=replace-with-your-cognee-cloud-key
+```
 
 Set these environment variables on the backend host:
 
