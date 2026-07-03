@@ -49,7 +49,7 @@ export default function MemoryUploadRail({
       initial={{ x: -52, opacity: 0.36 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 70, damping: 18, delay: 0.35 }}
-      className="group fixed left-3 top-[430px] z-40 sm:left-5 md:top-1/2 md:-translate-y-1/2"
+      className="group fixed left-5 top-1/2 z-40 hidden -translate-y-1/2 md:block"
     >
       <div
         {...getRootProps()}

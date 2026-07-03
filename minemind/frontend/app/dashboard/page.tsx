@@ -204,7 +204,7 @@ export default function DashboardPage() {
   })()
 
   return (
-    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden text-white md:h-screen md:min-h-[760px] md:overflow-hidden">
+    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden pb-28 text-white md:h-screen md:min-h-[760px] md:overflow-hidden md:pb-0">
       <PremiumNav />
       <MemoryUploadRail onUploadComplete={refreshDashboardData} />
 
@@ -239,7 +239,7 @@ export default function DashboardPage() {
         className="bottom-10 right-10 text-right"
       />
 
-      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pt-[520px] md:fixed md:left-10 md:top-44 md:w-[min(360px,calc(100vw-40px))] md:pt-0">
+      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pb-28 pt-[450px] md:fixed md:left-10 md:top-44 md:w-[min(360px,calc(100vw-40px))] md:pb-0 md:pt-0">
         <div className="glass-depth-subtle rounded-[26px] border border-white/10 bg-black/18 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -296,21 +296,21 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="absolute inset-x-0 top-0 z-10 flex min-h-[520px] flex-col items-center px-4 pb-24 pt-24 md:relative md:h-full md:min-h-0 md:justify-center md:px-8 md:pb-28">
+      <section className="absolute inset-x-0 top-0 z-10 flex min-h-[450px] flex-col items-center px-4 pb-12 pt-24 md:relative md:h-full md:min-h-0 md:justify-center md:px-8 md:pb-28">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
           className="pointer-events-none absolute top-24 max-w-[calc(100vw-2rem)] text-center md:top-[13vh] md:max-w-3xl"
         >
-          <div className="mx-auto flex w-fit items-center gap-3 rounded-full border border-[#f59e0b]/20 bg-black/24 px-4 py-2 shadow-[0_0_44px_rgba(245,158,11,0.12)] backdrop-blur-xl">
-            <img src="/logo.svg" alt="MineMind AI logo" className="h-8 w-8 rounded-xl" />
-            <span className="tracked-label text-[11px] text-[#f59e0b]/78">MineMind AI</span>
+          <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-[#f59e0b]/20 bg-black/24 px-3 py-1.5 shadow-[0_0_44px_rgba(245,158,11,0.12)] backdrop-blur-xl md:gap-3 md:px-4 md:py-2">
+            <img src="/logo.svg" alt="MineMind AI logo" className="h-7 w-7 rounded-xl md:h-8 md:w-8" />
+            <span className="tracked-label text-[10px] text-[#f59e0b]/78 md:text-[11px]">MineMind AI</span>
           </div>
-          <h1 className="metal-text mt-4 text-4xl font-bold leading-[1.02] tracking-tight sm:text-5xl md:text-6xl">
+          <h1 className="metal-text mx-auto mt-4 max-w-[360px] text-[2.35rem] font-bold leading-[1.05] tracking-tight sm:text-5xl md:max-w-none md:text-6xl">
             The operating brain for a mine
           </h1>
-          <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-white/48 sm:text-base sm:leading-7">
+          <p className="mx-auto mt-4 max-w-[340px] text-[15px] leading-7 text-white/62 sm:text-base md:mt-5 md:max-w-md md:text-white/48">
             Permanent AI memory for mining operations. Upload regulations, manuals, and incident reports &mdash; MineMind remembers everything forever and answers safety questions with evidence.
           </p>
         </motion.div>
@@ -324,7 +324,7 @@ export default function DashboardPage() {
             scale: isDraggingFile ? 0.96 : 1
           }}
           transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute left-1/2 top-[60%] h-[260px] w-[min(92vw,560px)] sm:h-[340px] md:top-[54%] md:h-[58vh] md:max-h-[590px] md:min-h-[420px] md:w-[min(78vw,880px)]"
+          className="absolute left-1/2 top-[71%] h-[170px] w-[min(78vw,340px)] opacity-45 sm:h-[260px] sm:w-[min(82vw,500px)] md:top-[54%] md:h-[58vh] md:max-h-[590px] md:min-h-[420px] md:w-[min(78vw,880px)] md:opacity-100"
         >
           <motion.div
             initial={false}
@@ -354,7 +354,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
           transition={{ delay: 0.65 }}
-          className="glass-depth-subtle fixed right-4 top-[430px] z-30 hidden items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86 sm:flex md:right-[13vw] md:top-[34vh]"
+          className="glass-depth-subtle fixed right-[13vw] top-[34vh] z-30 hidden items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86 lg:flex"
         >
           <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
           Optimize Memory
