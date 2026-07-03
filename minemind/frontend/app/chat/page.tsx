@@ -198,14 +198,14 @@ function ChatContent() {
   })
 
   return (
-    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden text-white">
+    <main className="premium-bg noise-mask relative h-[100dvh] overflow-hidden text-white">
       <PremiumNav />
       <BackToDashboard />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_24%,rgba(215,183,121,0.12),transparent_28%),radial-gradient(circle_at_84%_58%,rgba(96,119,139,0.16),transparent_30%)]" />
       <div className="pointer-events-none absolute left-1/2 top-24 h-px w-[78vw] -translate-x-1/2 bg-gradient-to-r from-transparent via-white/18 to-transparent" />
 
-      <section className="relative z-10 mx-auto grid min-h-[100dvh] max-w-7xl grid-cols-1 gap-4 px-3 pb-4 pt-20 sm:px-5 sm:pt-24 lg:h-screen lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5 lg:px-6 lg:pb-6">
-        <div className="glass-depth flex min-h-[calc(100dvh-6rem)] min-w-0 flex-col overflow-hidden rounded-[24px] sm:rounded-[32px] lg:min-h-0">
+      <section className="relative z-10 mx-auto grid h-[100dvh] max-w-7xl grid-cols-1 gap-4 overflow-hidden px-3 pb-3 pt-20 sm:px-5 sm:pb-4 sm:pt-24 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5 lg:px-6 lg:pb-6">
+        <div className="glass-depth flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] sm:rounded-[32px]">
           <header className="border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -226,7 +226,7 @@ function ChatContent() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-auto px-4 py-5 sm:px-6 sm:py-6">
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-6 sm:py-6">
           {messages.length === 0 ? (
             <div className="grid min-h-full place-items-center">
               <div className="w-full max-w-4xl">
@@ -305,7 +305,7 @@ function ChatContent() {
           <div ref={bottomRef} />
           </div>
 
-          <div className="border-t border-white/10 bg-black/18 p-2 sm:p-3">
+          <div className="shrink-0 border-t border-white/10 bg-black/18 p-2 sm:p-3">
             <form
               className="glass-depth amber-aura flex items-center gap-2 rounded-[22px] p-2 sm:gap-3 sm:rounded-[28px]"
               onSubmit={(event) => {
@@ -336,7 +336,9 @@ function ChatContent() {
           </div>
         </div>
 
-        <SourcePanel sources={latestSources} />
+        <div className="hidden min-h-0 lg:block">
+          <SourcePanel sources={latestSources} />
+        </div>
       </section>
     </main>
   )

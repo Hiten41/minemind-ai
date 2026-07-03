@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { BarChart3, FileText, Loader2, LogOut, MessageCircle, Mountain, UploadCloud, Wrench } from 'lucide-react'
-import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
 import { clearAuthToken } from '@/lib/api'
@@ -49,17 +48,16 @@ export default function PremiumNav() {
           const navigating = Boolean(pendingHref)
           const Icon = item.icon
           return (
-            <Link
+            <button
               key={item.href}
-              href={item.href}
-              scroll={false}
+              type="button"
               aria-current={active ? 'page' : undefined}
               aria-busy={pending}
-              onPointerDown={() => {
-                if (!active) setPendingHref(item.href)
-              }}
+              disabled={active || (navigating && !pending)}
               onClick={() => {
-                if (!active) setPendingHref(item.href)
+                if (active || navigating) return
+                setPendingHref(item.href)
+                router.push(item.href)
               }}
               className={`relative flex h-10 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-medium transition active:scale-95 sm:px-4 ${
                 active || pending ? 'text-white' : 'text-white/48 hover:text-white/84'
@@ -79,7 +77,7 @@ export default function PremiumNav() {
                 <Icon className="relative h-4 w-4" strokeWidth={1.6} />
               )}
               <span className="relative hidden sm:inline">{pending ? 'Opening...' : item.label}</span>
-            </Link>
+            </button>
           )
         })}
         <button

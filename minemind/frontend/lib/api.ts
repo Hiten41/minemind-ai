@@ -17,6 +17,7 @@ const BASE = configuredApiBase || (
   process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:8001'
 )
 const TOKEN_KEY = 'minemind_token'
+const AUTH_TIMEOUT_MS = 15000
 
 type ChatHistoryItem = {
   role: string
@@ -44,6 +45,25 @@ function apiUrl(path: string): string {
   return `${BASE}${path}`
 }
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('The server is taking too long to respond. Please try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 export function getAuthToken(): string {
   if (typeof window === 'undefined') return ''
   return window.localStorage.getItem(TOKEN_KEY) ?? ''
@@ -68,11 +88,11 @@ export async function registerUser(payload: {
   mobile: string
   password: string
 }): Promise<AuthResponse> {
-  const res = await fetch(apiUrl('/api/auth/register'), {
+  const res = await fetchWithTimeout(apiUrl('/api/auth/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  })
+  }, AUTH_TIMEOUT_MS)
   const auth = await parseJson<AuthResponse>(res, 'Registration failed')
   setAuthToken(auth.token)
   return auth
@@ -82,11 +102,11 @@ export async function loginUser(payload: {
   identifier: string
   password: string
 }): Promise<AuthResponse> {
-  const res = await fetch(apiUrl('/api/auth/login'), {
+  const res = await fetchWithTimeout(apiUrl('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  })
+  }, AUTH_TIMEOUT_MS)
   const auth = await parseJson<AuthResponse>(res, 'Login failed')
   setAuthToken(auth.token)
   return auth
