@@ -12,6 +12,8 @@ services:
         value: production
       - key: FRONTEND_ORIGIN_REGEX
         value: ^https://.*\.vercel\.app$
+      - key: FRONTEND_ORIGINS
+        value: https://minemind-ai-steel.vercel.app
       - key: AUTH_SECRET
         generateValue: true
       - key: MINEMIND_STORAGE_DIR
