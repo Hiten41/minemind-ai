@@ -18,6 +18,7 @@ const BASE = configuredApiBase || (
 )
 const TOKEN_KEY = 'minemind_token'
 const AUTH_TIMEOUT_MS = 15000
+const QUERY_TIMEOUT_MS = 70000
 
 type ChatHistoryItem = {
   role: string
@@ -41,6 +42,12 @@ async function parseJson<T>(res: Response, fallback: string): Promise<T> {
 function apiUrl(path: string): string {
   if (!BASE) {
     throw new Error('NEXT_PUBLIC_API_BASE_URL is required in production')
+  }
+  if (
+    process.env.NODE_ENV === 'production' &&
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?($|\/)/i.test(BASE)
+  ) {
+    throw new Error('Production API URL is set to localhost. Set NEXT_PUBLIC_API_BASE_URL to the deployed backend URL and redeploy.')
   }
   return `${BASE}${path}`
 }
@@ -138,14 +145,14 @@ export async function queryAI(
   question: string,
   history: ChatHistoryItem[]
 ): Promise<QueryResponse> {
-  const res = await fetch(apiUrl('/api/query'), {
+  const res = await fetchWithTimeout(apiUrl('/api/query'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({
       question,
       chat_history: history
     })
-  })
+  }, QUERY_TIMEOUT_MS)
   return parseJson<QueryResponse>(res, 'Query failed')
 }
 
