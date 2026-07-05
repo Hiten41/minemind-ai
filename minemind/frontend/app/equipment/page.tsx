@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import EquipmentCard, { type Equipment } from '@/components/cards/EquipmentCard'
-import BackToDashboard from '@/components/experience/BackToDashboard'
 import PremiumNav from '@/components/experience/PremiumNav'
 import { getDocumentIntelligence, getGraphData } from '@/lib/api'
-import type { DocumentIntelligenceItem, GraphNode } from '@/types'
+import type { DocumentIntelligence, DocumentIntelligenceItem, GraphNode } from '@/types'
 
 function deriveStatus(text: string): Equipment['status'] {
   const lowered = text.toLowerCase()
@@ -30,7 +29,7 @@ function deriveIncidents(text: string): number {
 
 function deriveLastInspection(text: string): string {
   const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b|\b\d{2}\/\d{2}\/\d{4}\b/)
-  return dateMatch?.[0] ?? 'Recorded in memory graph'
+  return dateMatch?.[0] ?? 'Recorded in your uploaded documents'
 }
 
 function nodeToEquipment(node: GraphNode): Equipment {
@@ -76,6 +75,53 @@ function graphWithTimeout() {
   ])
 }
 
+function documentIntelligenceWithTimeout() {
+  return Promise.race([
+    getDocumentIntelligence(),
+    new Promise<DocumentIntelligence>((resolve) => {
+      window.setTimeout(() => resolve({ documents: [], top_entities: [] }), 8000)
+    })
+  ])
+}
+
+function EquipmentDetails({
+  equipment,
+  onClose,
+  onAsk
+}: {
+  equipment: Equipment
+  onClose: () => void
+  onAsk: () => void
+}) {
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-[#888888]">{equipment.id}</p>
+          <h2 className="mt-1 text-xl font-semibold text-white">{equipment.name}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="text-[#888888] hover:text-white">
+          Close
+        </button>
+      </div>
+      <div className="mt-6 space-y-4 text-sm">
+        <p><span className="text-[#888888]">Status:</span> <span className="text-white">{equipment.status}</span></p>
+        <p><span className="text-[#888888]">Risk:</span> <span className="text-white">{equipment.risk}</span></p>
+        <p><span className="text-[#888888]">Last inspection:</span> <span className="text-white">{equipment.lastInspection}</span></p>
+        <p><span className="text-[#888888]">Incidents:</span> <span className="text-white">{equipment.incidents}</span></p>
+      </div>
+      <button
+        type="button"
+        onPointerDown={onAsk}
+        onClick={onAsk}
+        className="mt-8 w-full rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
+      >
+        Ask AI About This Equipment
+      </button>
+    </div>
+  )
+}
+
 export default function EquipmentPage() {
   const router = useRouter()
   const [items, setItems] = useState<Equipment[]>([])
@@ -86,7 +132,7 @@ export default function EquipmentPage() {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([graphWithTimeout(), getDocumentIntelligence()])
+    Promise.all([graphWithTimeout(), documentIntelligenceWithTimeout()])
       .then(([graph, intelligence]) => {
         if (cancelled) return
         const equipmentNodes = graph.nodes.filter((node) => node.type === 'equipment')
@@ -113,65 +159,63 @@ export default function EquipmentPage() {
   }, [])
 
   const emptyLabel = useMemo(() => {
-    if (loading) return 'Loading equipment from the memory graph...'
+    if (loading) return 'Loading equipment from your uploaded documents...'
     if (error) return error
-    return 'No equipment nodes were found in the current memory graph.'
+    return "No equipment found yet. Upload a maintenance report or incident report that mentions specific machinery, and it'll show up here."
   }, [error, loading])
+
+  function askAboutEquipment(equipment: Equipment) {
+    router.push(`/chat?q=${encodeURIComponent(`Tell me about ${equipment.name} maintenance history and any associated incidents or safety concerns`)}`)
+  }
 
   return (
     <main className="premium-bg min-h-screen overflow-x-hidden pt-20 text-white sm:pt-24">
       <PremiumNav />
-      <BackToDashboard />
-      <div className="grid min-h-[calc(100dvh-5rem)] grid-cols-1 gap-5 p-4 sm:p-6 lg:h-[calc(100vh-6rem)] lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:overflow-hidden lg:p-8">
+      <div className={`grid min-h-[calc(100dvh-5rem)] grid-cols-1 gap-5 p-4 sm:p-6 lg:h-[calc(100vh-6rem)] lg:gap-6 lg:overflow-hidden lg:p-8 ${
+        selectedEquipment ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : ''
+      }`}>
         <div className="grid auto-rows-max grid-cols-1 gap-4 overflow-visible sm:grid-cols-2 lg:gap-6 lg:overflow-auto">
           {items.length > 0 ? items.map((item) => (
-            <EquipmentCard
-              key={item.id}
-              {...item}
-              isSelected={selectedEquipment?.id === item.id}
-              onClick={() => setSelectedEquipment(item)}
-            />
+            <div key={item.id} className="contents">
+              <EquipmentCard
+                {...item}
+                isSelected={selectedEquipment?.id === item.id}
+                onClick={() => setSelectedEquipment(item)}
+              />
+              {selectedEquipment?.id === item.id ? (
+                <div className="rounded-xl border border-card-border bg-card p-5 sm:col-span-2 sm:p-6 lg:hidden">
+                  <EquipmentDetails
+                    equipment={selectedEquipment}
+                    onClose={() => setSelectedEquipment(null)}
+                    onAsk={() => askAboutEquipment(selectedEquipment)}
+                  />
+                </div>
+              ) : null}
+            </div>
           )) : (
-            <div className="rounded-xl border border-card-border bg-card p-6 text-[#888888] sm:col-span-2">
-              {emptyLabel}
+            <div className="min-w-0 rounded-xl border border-card-border bg-card p-6 text-[#888888] sm:col-span-2">
+              <p className="max-w-4xl whitespace-normal text-balance leading-7">{emptyLabel}</p>
+              {!loading && !error ? (
+                <button
+                  type="button"
+                  onClick={() => router.push('/documents')}
+                  className="mt-4 rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
+                >
+                  Upload a document
+                </button>
+              ) : null}
             </div>
           )}
         </div>
-        <aside className="rounded-xl border border-card-border bg-card p-5 sm:p-6 lg:h-fit">
-          {selectedEquipment ? (
-            <div>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm text-[#888888]">{selectedEquipment.id}</p>
-                  <h2 className="mt-1 text-xl font-semibold text-white">{selectedEquipment.name}</h2>
-                </div>
-                <button type="button" onClick={() => setSelectedEquipment(null)} className="text-[#888888] hover:text-white">
-                  Close
-                </button>
-              </div>
-              <div className="mt-6 space-y-4 text-sm">
-                <p><span className="text-[#888888]">Status:</span> <span className="text-white">{selectedEquipment.status}</span></p>
-                <p><span className="text-[#888888]">Risk:</span> <span className="text-white">{selectedEquipment.risk}</span></p>
-                <p><span className="text-[#888888]">Last inspection:</span> <span className="text-white">{selectedEquipment.lastInspection}</span></p>
-                <p><span className="text-[#888888]">Incidents:</span> <span className="text-white">{selectedEquipment.incidents}</span></p>
-              </div>
-              <button
-                type="button"
-                onPointerDown={() => router.push(`/chat?q=${encodeURIComponent(`Tell me about ${selectedEquipment.name} maintenance history and any associated incidents or safety concerns`)}`)}
-                onClick={() => router.push(`/chat?q=${encodeURIComponent(`Tell me about ${selectedEquipment.name} maintenance history and any associated incidents or safety concerns`)}`)}
-                className="mt-8 w-full rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
-              >
-                Ask AI About This Equipment
-              </button>
-            </div>
-          ) : loading ? (
-            <p className="text-[#888888]">Loading equipment from the memory graph...</p>
-          ) : error ? (
-            <p className="text-[#888888]">{error}</p>
-          ) : (
-            <p className="text-[#888888]">Select equipment to inspect maintenance and incident context.</p>
-          )}
-        </aside>
+        {selectedEquipment ? (
+          <aside className="hidden rounded-xl border border-card-border bg-card p-5 sm:p-6 lg:block lg:h-fit">
+            <EquipmentDetails
+              equipment={selectedEquipment}
+              onClose={() => setSelectedEquipment(null)}
+              onAsk={() => askAboutEquipment(selectedEquipment)}
+            />
+          </aside>
+        ) : null}
       </div>
     </main>
   )

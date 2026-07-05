@@ -7,7 +7,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'MineMind AI \u2014 Mining Intelligence',
   description:
-    'Permanent AI memory for mining operations. Upload regulations, manuals, and incident reports \u2014 MineMind remembers everything forever and answers safety questions with evidence.',
+    'Consolidate regulations, manuals, and incident data into a secure, searchable intelligence network for your mining operation.',
   icons: {
     icon: '/logo.svg'
   }

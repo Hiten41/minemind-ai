@@ -349,6 +349,42 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         chunk for chunk in recalled_chunks
         if isinstance(chunk, dict)
     ])
+    # If we found any uploaded-PDF evidence, return a concise, evidence-backed
+    # reply immediately so the client always receives the match instead of a
+    # general LLM fallback that might omit explicit citation.
+    if evidence_citations:
+        sources = [cite.as_source() for cite in evidence_citations]
+        excerpts = []
+        for cite in evidence_citations[:4]:
+            excerpts.append(f"[Source: {cite.title}] {cite.excerpt}")
+        answer_text = "From your uploaded PDFs: " + "\n\n".join(excerpts)
+        reasoning = (
+            "Returned direct matches from the user's uploaded PDFs. "
+            "See the `sources` field for citations and excerpts."
+        )
+        confidence = 0.9 if any(c.relevance >= 0.7 for c in evidence_citations) else 0.8
+        query_response = QueryResponse(
+            answer=answer_text,
+            reasoning=reasoning,
+            sources=sources,
+            related_memories=[],
+            confidence=confidence,
+            mode=agent_mode,
+            action_plan=action_plan_for_mode(agent_mode, evidence_citations),
+            confidence_notes=confidence_notes(evidence_citations),
+            query_type=query_type,
+        )
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            query_response.sources,
+            query_response.related_memories,
+            query_response.confidence,
+        )
+        return query_response
     context = "\n\n---\n\n".join(
         f"[Source: {chunk_source(chunk, index, source_names)}]\n{chunk_text(chunk)}"
         for index, chunk in enumerate(recalled_chunks[:6], start=1)

@@ -25,10 +25,23 @@ const instantGlobeNodes: Array<[number, number, number, string]> = [
   [230, 216, 3, '#ffffff']
 ]
 
-function InstantKnowledgeGlobe() {
+function InstantKnowledgeGlobe({ optimizePulse }: { optimizePulse: number }) {
   return (
     <div className="pointer-events-none absolute inset-0 grid place-items-center">
-      <div className="relative h-[min(420px,48vh)] w-[min(420px,48vh)] rounded-full">
+      <motion.div
+        key={optimizePulse}
+        animate={optimizePulse > 0 ? {
+          scale: [1, 0.86, 1.08, 1],
+          filter: [
+            'drop-shadow(0 0 0 rgba(215,183,121,0))',
+            'drop-shadow(0 0 34px rgba(215,183,121,0.42))',
+            'drop-shadow(0 0 64px rgba(215,183,121,0.32))',
+            'drop-shadow(0 0 0 rgba(215,183,121,0))'
+          ]
+        } : { scale: 1 }}
+        transition={{ duration: 1.35, ease: [0.22, 1, 0.36, 1] }}
+        className="relative h-[min(420px,48vh)] w-[min(420px,48vh)] rounded-full"
+      >
         <div className="absolute inset-0 rounded-full bg-[#d7b779]/10 blur-3xl" />
         <div className="absolute inset-[12%] rounded-full border border-[#d7b779]/10 bg-[radial-gradient(circle_at_45%_38%,rgba(215,183,121,0.2),rgba(255,255,255,0.025)_42%,transparent_72%)] shadow-[inset_0_0_90px_rgba(215,183,121,0.1),0_0_80px_rgba(215,183,121,0.08)]" />
         <div className="absolute inset-[16%] animate-[spin_18s_linear_infinite] rounded-full border border-white/[0.08]" />
@@ -45,26 +58,24 @@ function InstantKnowledgeGlobe() {
             <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={r} fill={fill} opacity="0.82" />
           ))}
         </svg>
-      </div>
+      </motion.div>
     </div>
   )
 }
 
-function FloatingMetric({
+function HeroMetric({
   label,
-  value,
-  className
+  value
 }: {
   label: string
   value: string
-  className: string
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      className={`fixed z-30 hidden md:block ${className}`}
+      className="min-w-[140px] rounded-2xl border border-white/10 bg-black/24 px-4 py-3 text-center backdrop-blur-xl"
     >
       <p className="tracked-label text-[10px] text-white/38">{label}</p>
       <p className="mt-2 text-sm font-medium text-white/70">{value}</p>
@@ -92,7 +103,7 @@ export default function DashboardPage() {
   const [queryPulse, setQueryPulse] = useState(0)
   const [optimizePulse, setOptimizePulse] = useState(0)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
-  const [crystalReady, setCrystalReady] = useState(false)
+  const [reindexPulseVisible, setReindexPulseVisible] = useState(false)
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
   const refreshDashboardData = useCallback(() => {
@@ -181,6 +192,13 @@ export default function DashboardPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (optimizePulse === 0) return
+    setReindexPulseVisible(true)
+    const timeout = window.setTimeout(() => setReindexPulseVisible(false), 1600)
+    return () => window.clearTimeout(timeout)
+  }, [optimizePulse])
+
   function ask() {
     const trimmed = question.trim()
     if (!trimmed) return
@@ -195,12 +213,12 @@ export default function DashboardPage() {
   const documentsLabel = (() => {
     if (analyticsState === 'loading') return 'Loading...'
     if (analyticsState === 'error') return 'Unavailable'
-    return `${documents.toLocaleString()} sources`
+    return `${documents.toLocaleString()} ${documents === 1 ? 'source' : 'sources'}`
   })()
   const incidentsLabel = (() => {
     if (analyticsState === 'loading') return 'Loading...'
     if (analyticsState === 'error') return 'Unavailable'
-    return `${incidentReports.toLocaleString()} uploaded cases`
+    return `${incidentReports.toLocaleString()} uploaded ${incidentReports === 1 ? 'case' : 'cases'}`
   })()
 
   return (
@@ -218,28 +236,7 @@ export default function DashboardPage() {
       />
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[760px] w-[760px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#d7b779]/[0.055] blur-3xl" />
 
-      <FloatingMetric
-        label="Documents Indexed"
-        value={documentsLabel}
-        className="left-10 top-28"
-      />
-      <FloatingMetric
-        label="Incident Reports"
-        value={incidentsLabel}
-        className="right-10 top-28 text-right"
-      />
-      <FloatingMetric
-        label="Model Context"
-        value="Cognee memory graph"
-        className="bottom-10 left-10"
-      />
-      <FloatingMetric
-        label="Interface"
-        value="Spatial query mode"
-        className="bottom-10 right-10 text-right"
-      />
-
-      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pb-28 pt-[450px] md:fixed md:left-10 md:top-44 md:w-[min(360px,calc(100vw-40px))] md:pb-0 md:pt-0">
+      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pb-28 pt-[450px] md:fixed md:left-10 md:top-80 md:w-[min(360px,calc(100vw-40px))] md:pb-0 md:pt-0">
         <div className="glass-depth-subtle rounded-[26px] border border-white/10 bg-black/18 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -301,18 +298,34 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-none absolute top-24 max-w-[calc(100vw-2rem)] text-center md:top-[13vh] md:max-w-3xl"
+          className="absolute top-24 max-w-[calc(100vw-2rem)] rounded-[30px] bg-black/30 px-5 py-5 text-center shadow-[0_24px_110px_rgba(0,0,0,0.34)] backdrop-blur-[2px] md:top-[13vh] md:max-w-4xl md:px-7"
         >
           <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-[#f59e0b]/20 bg-black/24 px-3 py-1.5 shadow-[0_0_44px_rgba(245,158,11,0.12)] backdrop-blur-xl md:gap-3 md:px-4 md:py-2">
             <img src="/logo.svg" alt="MineMind AI logo" className="h-7 w-7 rounded-xl md:h-8 md:w-8" />
             <span className="tracked-label text-[10px] text-[#f59e0b]/78 md:text-[11px]">MineMind AI</span>
           </div>
-          <h1 className="metal-text mx-auto mt-4 max-w-[360px] text-[2.35rem] font-bold leading-[1.05] tracking-tight sm:text-5xl md:max-w-none md:text-6xl">
-            The operating brain for a mine
+          <h1 className="metal-text mx-auto mt-4 max-w-[360px] text-[2.35rem] font-bold leading-[1.05] tracking-tight sm:text-5xl md:max-w-3xl md:text-6xl">
+            Enterprise Knowledge Automation for Mining Operations
           </h1>
           <p className="mx-auto mt-4 max-w-[340px] text-[15px] leading-7 text-white/62 sm:text-base md:mt-5 md:max-w-md md:text-white/48">
-            Permanent AI memory for mining operations. Upload regulations, manuals, and incident reports &mdash; MineMind remembers everything forever and answers safety questions with evidence.
+            Consolidate regulations, manuals, and incident data into a secure, searchable intelligence network for your mining operation.
           </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <HeroMetric label="Documents Indexed" value={documentsLabel} />
+            <HeroMetric label="Incident Reports" value={incidentsLabel} />
+            <HeroMetric label="Knowledge Base" value="Uploaded documents" />
+            <motion.button
+              type="button"
+              onClick={() => setOptimizePulse((current) => current + 1)}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
+              transition={{ delay: 0.65 }}
+              className="glass-depth-subtle inline-flex items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
+            >
+              <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
+              Re-index Knowledge Base
+            </motion.button>
+          </div>
         </motion.div>
 
         <motion.div
@@ -324,41 +337,42 @@ export default function DashboardPage() {
             scale: isDraggingFile ? 0.96 : 1
           }}
           transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute left-1/2 top-[71%] h-[170px] w-[min(78vw,340px)] opacity-45 sm:h-[260px] sm:w-[min(82vw,500px)] md:top-[54%] md:h-[58vh] md:max-h-[590px] md:min-h-[420px] md:w-[min(78vw,880px)] md:opacity-100"
+          className="pointer-events-none absolute left-1/2 top-[71%] h-[170px] w-[min(78vw,340px)] opacity-45 sm:h-[260px] sm:w-[min(82vw,500px)] md:top-[54%] md:h-[58vh] md:max-h-[590px] md:min-h-[420px] md:w-[min(78vw,880px)] md:opacity-100"
         >
           <motion.div
             initial={false}
-            animate={{ opacity: crystalReady ? 0 : 1, scale: crystalReady ? 0.98 : 1 }}
+            animate={{
+              opacity: 1,
+              scale: reindexPulseVisible ? 1.08 : 1
+            }}
             transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0"
+            className={`absolute inset-0 ${reindexPulseVisible ? 'z-20' : 'z-0'}`}
           >
-            <InstantKnowledgeGlobe />
+            <InstantKnowledgeGlobe optimizePulse={optimizePulse} />
           </motion.div>
           <motion.div
             initial={false}
-            animate={{ opacity: crystalReady ? 1 : 0 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0"
+            className="absolute inset-0 z-10"
           >
             <KnowledgeCrystal
               queryPulse={queryPulse}
               optimizePulse={optimizePulse}
-              onReady={() => setCrystalReady(true)}
             />
           </motion.div>
+          {reindexPulseVisible ? (
+            <motion.div
+              key={`reindex-globe-${optimizePulse}`}
+              initial={{ opacity: 0, scale: 0.72 }}
+              animate={{ opacity: [0, 1, 0.88, 0], scale: [0.72, 0.96, 1.1, 1.18] }}
+              transition={{ duration: 1.6, ease: [0.22, 1, 0.36, 1] }}
+              className="pointer-events-none absolute inset-0 z-30"
+            >
+              <InstantKnowledgeGlobe optimizePulse={optimizePulse} />
+            </motion.div>
+          ) : null}
         </motion.div>
-
-        <motion.button
-          type="button"
-          onClick={() => setOptimizePulse((current) => current + 1)}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
-          transition={{ delay: 0.65 }}
-          className="glass-depth-subtle fixed right-[13vw] top-[34vh] z-30 hidden items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86 lg:flex"
-        >
-          <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
-          Optimize Memory
-        </motion.button>
 
         <motion.div
           initial={{ x: '-50%', opacity: 0, y: 28, scale: 0.98 }}

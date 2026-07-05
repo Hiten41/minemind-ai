@@ -49,16 +49,17 @@ export default function MemoryUploadRail({
       initial={{ x: -52, opacity: 0.36 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 70, damping: 18, delay: 0.35 }}
-      className="group fixed left-5 top-1/2 z-40 hidden -translate-y-1/2 md:block"
+      className="group fixed bottom-24 left-5 z-40 hidden md:block"
     >
       <div
         {...getRootProps()}
-        className={`glass-depth-subtle w-[64px] cursor-pointer overflow-hidden rounded-[24px] px-3 py-3 transition-all duration-500 group-hover:w-[min(320px,calc(100vw-1.5rem))] md:w-[74px] md:rounded-[28px] md:px-4 md:py-5 ${
+        aria-label="Upload document"
+        className={`glass-depth-subtle w-[116px] cursor-pointer overflow-hidden rounded-[24px] px-3 py-3 transition-all duration-500 group-hover:w-[min(320px,calc(100vw-1.5rem))] md:w-[126px] md:rounded-[28px] md:px-4 md:py-5 ${
           isDragActive ? 'amber-aura bg-white/10' : ''
         }`}
       >
         <input {...getInputProps()} />
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 group-hover:gap-4">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/[0.08] text-[#d7b779] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] md:h-11 md:w-11">
             {state === 'uploading' ? (
               <Loader2 className="h-5 w-5 animate-spin" strokeWidth={1.5} />
@@ -68,6 +69,7 @@ export default function MemoryUploadRail({
               <FileUp className="h-5 w-5" strokeWidth={1.5} />
             )}
           </div>
+          <p className="w-[42px] shrink-0 overflow-hidden text-xs font-medium text-white/58 transition-all duration-300 group-hover:w-0 group-hover:opacity-0">Upload</p>
           <div className="min-w-0 opacity-0 transition duration-300 group-hover:opacity-100">
             <p className="tracked-label text-[10px] text-white/42">Memory Intake</p>
             <p className={`mt-2 truncate text-sm ${state === 'error' ? 'text-[#d6a6a6]' : 'text-white/76'}`}>

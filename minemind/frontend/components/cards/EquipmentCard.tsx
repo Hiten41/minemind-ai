@@ -51,7 +51,7 @@ export default function EquipmentCard({
           {status}
         </span>
       </div>
-      <div className="grid grid-cols-1 gap-3 text-sm min-[420px]:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 text-sm min-[420px]:grid-cols-2">
         <div>
           <p className="text-[#888888]">Risk</p>
           <p className={`font-semibold ${riskClass[risk]}`}>{risk}</p>
@@ -60,9 +60,9 @@ export default function EquipmentCard({
           <p className="text-[#888888]">Incidents</p>
           <p className="font-semibold text-white">{incidents}</p>
         </div>
-        <div>
+        <div className="min-[420px]:col-span-2">
           <p className="text-[#888888]">Inspection</p>
-          <p className="break-words font-semibold text-white">{lastInspection}</p>
+          <p className="truncate font-semibold text-white" title={lastInspection}>{lastInspection}</p>
         </div>
       </div>
     </button>
