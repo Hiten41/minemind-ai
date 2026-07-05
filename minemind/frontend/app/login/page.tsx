@@ -57,10 +57,10 @@ export default function LoginPage() {
           className="mx-auto h-20 w-20 rounded-[24px] shadow-[0_0_60px_rgba(245,158,11,0.18)] sm:h-24 sm:w-24"
         />
         <div className="mt-6 text-center">
-          <p className="tracked-label text-[10px] text-[#f59e0b]/72">The operating brain for a mine</p>
+          <p className="tracked-label text-[10px] text-[#f59e0b]/72">Enterprise Knowledge Automation for Mining Operations</p>
           <h1 className="mt-3 text-4xl font-bold text-white sm:text-5xl">MineMind AI</h1>
           <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-white/50">
-            Permanent AI memory for mining operations. Upload regulations, manuals, and incident reports &mdash; MineMind remembers everything forever and answers safety questions with evidence.
+            Consolidate regulations, manuals, and incident data into a secure, searchable intelligence network for your mining operation.
           </p>
         </div>
 

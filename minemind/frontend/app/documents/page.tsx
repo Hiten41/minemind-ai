@@ -4,7 +4,6 @@ import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, type 
 import { Eye, FileText, Layers3, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-import BackToDashboard from '@/components/experience/BackToDashboard'
 import PremiumNav from '@/components/experience/PremiumNav'
 import UploadZone from '@/components/upload/UploadZone'
 import { forgetDataset, getDocumentsPage, uploadDocument } from '@/lib/api'
@@ -152,7 +151,6 @@ export default function DocumentsPage() {
       }}
     >
       <PremiumNav />
-      <BackToDashboard />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_72%,rgba(255,255,255,0.05),transparent_24%),radial-gradient(circle_at_84%_34%,rgba(255,255,255,0.08),transparent_26%)]" />
       <motion.div
         style={{ x: orbX, y: orbY }}
@@ -171,10 +169,10 @@ export default function DocumentsPage() {
         <div className="mt-4 flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div>
             <h1 className="metal-text text-4xl font-bold leading-tight tracking-tight sm:text-5xl md:text-6xl">
-              Memory library.
+              Documents
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-white/46">
-              A quiet, tactile space for incident reports, manuals, and operational knowledge.
+              Secure repository for incident reports, equipment manuals, and operational knowledge.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 text-right">
@@ -183,7 +181,7 @@ export default function DocumentsPage() {
               <p className="mt-2 text-2xl font-semibold text-white/86">{documents.length}</p>
             </div>
             <div className="rounded-3xl border border-white/10 bg-white/[0.045] px-5 py-4 backdrop-blur-2xl">
-              <p className="tracked-label text-[9px] text-white/32">Nodes</p>
+              <p className="tracked-label text-[9px] text-white/32">Indexed sections</p>
               <p className="mt-2 text-2xl font-semibold text-white/86">{totalNodes}</p>
             </div>
           </div>
@@ -197,26 +195,6 @@ export default function DocumentsPage() {
         >
           <motion.div variants={itemVariants}>
             <UploadZone file={selectedFile} onFile={setSelectedFile} />
-          </motion.div>
-
-          <motion.div variants={itemVariants} className="mt-5 flex flex-wrap gap-2 px-1">
-            {typeLabels.map((item) => (
-              <motion.button
-                key={item.value}
-                type="button"
-                onClick={() => setSelectedType(item.value)}
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.94 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-300 ${
-                  selectedType === item.value
-                    ? 'border-white/20 bg-gradient-to-b from-neutral-700 to-neutral-800 text-white shadow-[0_0_30px_rgba(255,255,255,0.05)]'
-                    : 'border-white/10 bg-white/5 text-neutral-400 hover:border-white/20 hover:text-white'
-                }`}
-              >
-                {item.label}
-              </motion.button>
-            ))}
           </motion.div>
 
           <motion.button
@@ -249,13 +227,34 @@ export default function DocumentsPage() {
           variants={itemVariants}
           className="min-h-[520px]"
         >
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <p className="tracked-label text-[10px] text-white/34">Indexed</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white/88">Recent files</h2>
+          <div className="mb-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="tracked-label text-[10px] text-white/34">Indexed</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white/88">Recent files</h2>
+              </div>
+              <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/46 backdrop-blur-xl">
+                {documents.length} of {totalDocuments || documents.length} items
+              </div>
             </div>
-            <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/46 backdrop-blur-xl">
-              {documents.length} of {totalDocuments || documents.length} items
+            <div className="flex flex-wrap gap-2">
+              {typeLabels.map((item) => (
+                <motion.button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setSelectedType(item.value)}
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.94 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-300 ${
+                    selectedType === item.value
+                      ? 'border-white/20 bg-gradient-to-b from-neutral-700 to-neutral-800 text-white shadow-[0_0_30px_rgba(255,255,255,0.05)]'
+                      : 'border-white/10 bg-white/5 text-neutral-400 hover:border-white/20 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </motion.button>
+              ))}
             </div>
           </div>
 
@@ -267,7 +266,7 @@ export default function DocumentsPage() {
                 </div>
                 <p className="mt-5 text-xl font-semibold text-white/82">No files yet</p>
                 <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-white/42">
-                  Add a document to create your first memory card.
+                  Upload a document to get started.
                 </p>
               </div>
             </div>
@@ -299,7 +298,7 @@ export default function DocumentsPage() {
                     </span>
                   </div>
 
-                  <h3 className="relative mt-6 line-clamp-2 min-h-[3.5rem] text-xl font-semibold leading-7 tracking-tight text-white/88">
+                  <h3 className="relative mt-6 line-clamp-3 min-h-[5.25rem] text-xl font-semibold leading-7 tracking-tight text-white/88">
                     {doc.name}
                   </h3>
 
@@ -309,7 +308,7 @@ export default function DocumentsPage() {
                       <p className="mt-1 text-white/64">{formatDate(doc.uploaded_at)}</p>
                     </div>
                     <div>
-                      <p className="text-white/30">Nodes</p>
+                      <p className="text-white/30">Indexed sections</p>
                       <p className="mt-1 text-white/64">{doc.node_count}</p>
                     </div>
                   </div>
@@ -387,7 +386,7 @@ export default function DocumentsPage() {
                 {[
                   ['Type', selectedDocument.type],
                   ['Status', selectedDocument.status],
-                  ['Nodes', String(selectedDocument.node_count)]
+                  ['Indexed sections', String(selectedDocument.node_count)]
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-3xl border border-white/10 bg-black/18 p-4">
                     <p className="text-xs text-white/34">{label}</p>

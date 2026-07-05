@@ -5,7 +5,6 @@ import { AlertTriangle, ArrowRight, FileText, Layers3, ShieldCheck, UploadCloud,
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
-import BackToDashboard from '@/components/experience/BackToDashboard'
 import PremiumNav from '@/components/experience/PremiumNav'
 import { getDocumentsPage } from '@/lib/api'
 import type { Document } from '@/types'
@@ -139,6 +138,12 @@ export default function IncidentsPage() {
     [cases]
   )
 
+  useEffect(() => {
+    if (!loading && cases.length === 1) {
+      setSelectedCase((current) => current ?? cases[0])
+    }
+  }, [cases, loading])
+
   return (
     <motion.main
       variants={pageVariants}
@@ -147,7 +152,6 @@ export default function IncidentsPage() {
       className="premium-bg noise-mask relative min-h-screen overflow-x-hidden px-4 pb-10 pt-24 text-white sm:px-6 sm:pb-12 sm:pt-28"
     >
       <PremiumNav />
-      <BackToDashboard />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:112px_112px] opacity-30" />
       <div className="pointer-events-none absolute right-[8%] top-[18%] h-[420px] w-[420px] rounded-full bg-[#8fb8d8]/[0.07] blur-3xl" />
       <div className="pointer-events-none absolute left-[8%] bottom-[8%] h-[360px] w-[360px] rounded-full bg-white/[0.04] blur-3xl" />
@@ -157,7 +161,7 @@ export default function IncidentsPage() {
           <div>
             <p className="tracked-label text-[10px] text-white/40">Cases</p>
             <h1 className="metal-text mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl md:text-6xl">
-              Incident memory.
+              Incidents
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/48">
               Real incident reports from your uploaded documents, ready for recall, regulation matching, and follow-up analysis.
@@ -184,8 +188,8 @@ export default function IncidentsPage() {
           </motion.div>
         ) : null}
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
-          <motion.section variants={itemVariants} className="min-h-[520px]">
+        <div className="mt-8 grid gap-4 sm:mt-10 lg:grid-cols-[minmax(0,1fr)_390px] lg:gap-6">
+          <motion.section variants={itemVariants} className="lg:min-h-[520px]">
             {loading ? (
               <LoadingBlock />
             ) : cases.length > 0 ? (
@@ -289,19 +293,19 @@ export default function IncidentsPage() {
                   </button>
                 </div>
 
-                <div className="mt-7 grid gap-3">
+                <dl className="mt-7 divide-y divide-white/10 rounded-2xl border border-white/10 bg-black/18">
                   {[
                     ['Status', selectedCase.status],
                     ['Uploaded', selectedCase.date],
                     ['Memory nodes', selectedCase.nodes.toLocaleString()],
                     ['Dataset', selectedCase.datasetName]
                   ].map(([label, value]) => (
-                    <div key={label} className="rounded-2xl border border-white/10 bg-black/18 p-4">
-                      <p className="text-xs text-white/34">{label}</p>
-                      <p className="mt-2 break-all text-sm font-medium text-white/76">{value}</p>
+                    <div key={label} className="grid gap-2 px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)]">
+                      <dt className="text-xs text-white/34">{label}</dt>
+                      <dd className="break-all text-sm font-medium text-white/76">{value}</dd>
                     </div>
                   ))}
-                </div>
+                </dl>
 
                 <div className="mt-6 space-y-3">
                   <button

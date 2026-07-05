@@ -43,21 +43,28 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
       ) : null}
       <p className="whitespace-pre-wrap break-words text-sm leading-7 text-white/82">{message.content}</p>
-      {message.reasoning ? (
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowReasoning((value) => !value)}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-2 text-xs font-medium text-[#d7b779] transition hover:border-[#d7b779]/30"
-          >
-            {showReasoning ? 'Hide Reasoning' : 'Show Reasoning'}
-            <ChevronDown className={`h-3.5 w-3.5 transition ${showReasoning ? 'rotate-180' : ''}`} strokeWidth={1.7} />
-          </button>
-          {showReasoning ? (
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/24 p-4 text-sm leading-6 text-white/62">
-              {message.reasoning}
-            </div>
+      {message.reasoning || typeof message.confidence === 'number' ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {typeof message.confidence === 'number' ? (
+            <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs text-white/56">
+              Confidence {Math.round(message.confidence * 100)}%
+            </span>
           ) : null}
+          {message.reasoning ? (
+            <button
+              type="button"
+              onClick={() => setShowReasoning((value) => !value)}
+              className="flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-medium text-[#d7b779] transition hover:border-[#d7b779]/30"
+            >
+              {showReasoning ? 'Hide Reasoning' : 'Show Reasoning'}
+              <ChevronDown className={`h-3.5 w-3.5 transition ${showReasoning ? 'rotate-180' : ''}`} strokeWidth={1.7} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {message.reasoning && showReasoning ? (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-black/24 p-4 text-sm leading-6 text-white/62">
+          {message.reasoning}
         </div>
       ) : null}
       {message.sources && message.sources.length > 0 ? (
@@ -82,11 +89,6 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
             </span>
           ))}
         </div>
-      ) : null}
-      {typeof message.confidence === 'number' ? (
-        <p className="mt-3 text-xs text-white/38">
-          Confidence: {Math.round(message.confidence * 100)}%
-        </p>
       ) : null}
       </div>
     </div>

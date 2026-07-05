@@ -105,13 +105,6 @@ function ChatContent() {
     return latestAssistant?.sources ?? []
   }, [messages])
 
-  const latestConfidence = useMemo(() => {
-    const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
-    return typeof latestAssistant?.confidence === 'number'
-      ? Math.round(latestAssistant.confidence * 100)
-      : null
-  }, [messages])
-
   const inputPlaceholder = useMemo(() => {
     const lowered = input.toLowerCase()
     const hasTemporalHint = temporalInputKeywords.some((keyword) => lowered.includes(keyword))
@@ -214,13 +207,7 @@ function ChatContent() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-xs text-white/54">
-                  Groq LLM
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-xs text-white/54">
-                  Ollama embeddings
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-xs text-white/54">
-                  {latestConfidence === null ? 'Memory ready' : `${latestConfidence}% confidence`}
+                  Memory ready
                 </span>
               </div>
             </div>

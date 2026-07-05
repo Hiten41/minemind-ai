@@ -182,7 +182,8 @@ export default function KnowledgeCrystal({ queryPulse = 0, optimizePulse = 0, on
     <Canvas
       dpr={[1, 1.75]}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
-      className="h-full w-full"
+      className="h-full w-full pointer-events-none"
+      style={{ pointerEvents: 'none' }}
       onCreated={() => onReady?.()}
     >
       <PerspectiveCamera makeDefault position={[0, 0.1, 6.1]} fov={38} />

@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, type Variants } from 'framer-motion'
-import { Activity, AlertTriangle, BarChart3, BrainCircuit, Database, FileStack, Layers3, Radar } from 'lucide-react'
+import { Activity, AlertTriangle, BrainCircuit, Database, FileStack, Radar } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
@@ -16,7 +16,6 @@ import {
   YAxis
 } from 'recharts'
 
-import BackToDashboard from '@/components/experience/BackToDashboard'
 import PremiumNav from '@/components/experience/PremiumNav'
 import { getAnalytics } from '@/lib/api'
 import type { AnalyticsData } from '@/types'
@@ -115,8 +114,7 @@ function SectionShell({
   className?: string
 }) {
   return (
-    <motion.section
-      variants={itemVariants}
+    <section
       className={`rounded-[32px] border border-white/10 bg-white/[0.045] p-5 shadow-[0_28px_110px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl ${className}`}
     >
       <div className="mb-5 flex items-center justify-between gap-4">
@@ -126,7 +124,7 @@ function SectionShell({
         </div>
       </div>
       {children}
-    </motion.section>
+    </section>
   )
 }
 
@@ -134,7 +132,6 @@ function LoadingState() {
   return (
     <main className="premium-bg noise-mask relative grid min-h-screen place-items-center overflow-x-hidden px-4 text-white sm:px-6">
       <PremiumNav />
-      <BackToDashboard />
       <div className="relative z-10 text-center">
         <div className="mx-auto grid h-16 w-16 place-items-center rounded-[24px] border border-[#d7b779]/24 bg-[#d7b779]/10 text-[#d7b779]">
           <Radar className="h-7 w-7 animate-pulse" strokeWidth={1.45} />
@@ -189,7 +186,6 @@ export default function AnalyticsPage() {
       className="premium-bg noise-mask relative min-h-screen overflow-x-hidden px-4 pb-10 pt-24 text-white sm:px-6 sm:pb-12 sm:pt-28"
     >
       <PremiumNav />
-      <BackToDashboard />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:96px_96px] opacity-35" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#d7b779]/30 to-transparent" />
 
@@ -198,10 +194,10 @@ export default function AnalyticsPage() {
           <div>
             <p className="tracked-label text-[10px] text-[#d7b779]/70">Signal Analytics</p>
             <h1 className="metal-text mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl md:text-6xl">
-              Memory intelligence.
+              Analytics
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/48">
-              Live operational signal from uploaded documents, indexed memory nodes, and incident-linked knowledge.
+              Trends and patterns across your uploaded documents and incident reports.
             </p>
           </div>
         </motion.header>
@@ -219,14 +215,14 @@ export default function AnalyticsPage() {
           <MetricCard
             label="Documents"
             value={compactNumber(data.total_documents)}
-            detail={`${topType?.name ?? 'No'} source type leads the memory set`}
+            detail={`Top Source Type: ${topType?.name ? topType.name.charAt(0).toUpperCase() + topType.name.slice(1) : 'None'}`}
             tone="#8fb8d8"
             icon={FileStack}
           />
           <MetricCard
             label="Memory Nodes"
             value={compactNumber(data.memory_nodes)}
-            detail={`${compactNumber(nodesPerDoc)} nodes per document on average`}
+            detail={`Average Density: ${compactNumber(nodesPerDoc)} nodes/doc`}
             tone="#d7b779"
             icon={BrainCircuit}
           />
@@ -240,7 +236,7 @@ export default function AnalyticsPage() {
           <MetricCard
             label="Equipment"
             value={compactNumber(data.equipment_count)}
-            detail={`${percent(data.equipment_count, data.total_documents)}% of memory is equipment-linked`}
+            detail={`Equipment Linked: ${percent(data.equipment_count, data.total_documents)}% of documents`}
             tone="#7ed6a5"
             icon={Database}
           />
@@ -248,7 +244,7 @@ export default function AnalyticsPage() {
 
         <div className="mt-8 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)]">
           <SectionShell eyebrow="Monthly Trend" title="Incident capture over time" className="min-h-[430px]">
-            <div className="h-[340px]">
+            <div className="h-[340px] min-w-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartMonths} margin={{ top: 12, right: 8, left: -18, bottom: 8 }}>
                   <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
@@ -319,46 +315,6 @@ export default function AnalyticsPage() {
             </div>
           </SectionShell>
         </div>
-
-        <section className="mt-5 grid gap-4 lg:grid-cols-3">
-          {[
-            {
-              icon: Layers3,
-              label: 'Dominant source',
-              value: topType ? `${topType.name} (${topType.value})` : 'No documents yet',
-              tone: '#d7b779'
-            },
-            {
-              icon: Activity,
-              label: 'Knowledge density',
-              value: `${compactNumber(nodesPerDoc)} nodes per file`,
-              tone: '#8fb8d8'
-            },
-            {
-              icon: BarChart3,
-              label: 'Monthly coverage',
-              value: `${monthlyData.length} active month${monthlyData.length === 1 ? '' : 's'}`,
-              tone: '#7ed6a5'
-            }
-          ].map((item) => {
-            const Icon = item.icon
-            return (
-              <motion.article
-                key={item.label}
-                variants={itemVariants}
-                className="flex items-center gap-4 rounded-[26px] border border-white/10 bg-black/20 p-5 backdrop-blur-xl"
-              >
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[0.06]" style={{ color: item.tone }}>
-                  <Icon className="h-5 w-5" strokeWidth={1.55} />
-                </div>
-                <div className="min-w-0">
-                  <p className="tracked-label text-[9px] text-white/32">{item.label}</p>
-                  <p className="mt-2 truncate text-sm font-medium text-white/76">{item.value}</p>
-                </div>
-              </motion.article>
-            )
-          })}
-        </section>
       </div>
     </motion.main>
   )
