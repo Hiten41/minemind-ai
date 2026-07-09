@@ -71,14 +71,18 @@ export default function DocumentsPage() {
   const sheenY = useTransform(smoothY, (value) => value * -10)
 
   useEffect(() => {
-    getDocumentsPage({ limit: 50 })
+    setError('')
+    setDocuments([])
+    setTotalDocuments(0)
+    setHasMoreDocuments(false)
+    getDocumentsPage({ limit: 50, type: selectedType })
       .then((page) => {
         setDocuments(page.items)
         setTotalDocuments(page.total)
         setHasMoreDocuments(page.has_more)
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to fetch documents'))
-  }, [])
+  }, [selectedType])
 
   useEffect(() => {
     if (!selectedDocument) {
@@ -119,7 +123,7 @@ export default function DocumentsPage() {
     setLoadingMore(true)
     setError('')
     try {
-      const page = await getDocumentsPage({ limit: 50, offset: documents.length })
+      const page = await getDocumentsPage({ limit: 50, offset: documents.length, type: selectedType })
       setDocuments((current) => [...current, ...page.items])
       setTotalDocuments(page.total)
       setHasMoreDocuments(page.has_more)
