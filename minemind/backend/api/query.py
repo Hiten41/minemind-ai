@@ -438,6 +438,83 @@ def has_unmatched_pdf_reference(question: str, focused_sources: set[str]) -> boo
     return bool(referenced_pdf_names(question) and not focused_sources)
 
 
+def incident_query_terms(question: str) -> list[str]:
+    lowered = question.lower().replace("|", " ")
+    terms = re.findall(r"[a-z0-9]+", lowered)
+    expanded = set(terms)
+    if "firedamp" in lowered:
+        expanded.update({"fire", "damp", "fire damp"})
+    if "fire" in expanded and "damp" in expanded:
+        expanded.add("fire damp")
+    if "jeetpur" in expanded:
+        expanded.update({"jitpur", "jeetpur"})
+    if "jitpur" in expanded:
+        expanded.update({"jitpur", "jeetpur"})
+    if "colliery" in expanded:
+        expanded.update({"mine", "mines", "coal"})
+    if "explosion" in expanded:
+        expanded.update({"accident", "fatalities", "cause"})
+    return sorted(expanded, key=len, reverse=True)
+
+
+def is_incident_detail_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(term in lowered for term in (
+        "accident",
+        "incident",
+        "explosion",
+        "firedamp",
+        "fire damp",
+        "colliery",
+        "fatalities",
+        "roof fall",
+        "inundation",
+    ))
+
+
+def incident_retrieval_query(question: str) -> str:
+    cleaned = remove_referenced_pdf_names(question).replace("|", " ")
+    cleaned = re.sub(r"\bfiredamp\b", "fire damp", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bcolliery\b", "mine", cleaned, flags=re.IGNORECASE)
+    if re.search(r"\bjeetpur\b", cleaned, flags=re.IGNORECASE):
+        cleaned = f"{cleaned} Jitpur"
+    return (
+        f"{cleaned} major accidents Indian coal mines dates accident name mine "
+        "fatalities cause explosion fire damp roof fall inundation"
+    )
+
+
+def rerank_recalled_chunks(
+    chunks: list[MemoryChunk | str],
+    question: str,
+) -> list[MemoryChunk | str]:
+    terms = incident_query_terms(question)
+    if not terms:
+        return chunks
+
+    def score(chunk: MemoryChunk | str) -> int:
+        text = chunk_text(chunk).lower()
+        source = str(chunk.get("source", "")).lower() if isinstance(chunk, dict) else ""
+        haystack = f"{source}\n{text}"
+        total = 0
+        for term in terms:
+            if " " in term:
+                if term in haystack:
+                    total += 6
+            elif re.search(rf"\b{re.escape(term)}\b", haystack):
+                total += 3
+        return total
+
+    return [
+        chunk
+        for _score, _index, chunk in sorted(
+            ((score(chunk), -index, chunk) for index, chunk in enumerate(chunks)),
+            key=lambda item: (item[0], item[1]),
+            reverse=True,
+        )
+    ]
+
+
 def is_document_overview_question(question: str) -> bool:
     lowered = question.lower()
     return any(phrase in lowered for phrase in (
@@ -465,6 +542,8 @@ def is_document_overview_question(question: str) -> bool:
 def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[str]:
     queries: list[str] = []
     lowered = question.lower()
+    if is_incident_detail_question(question):
+        queries.append(incident_retrieval_query(question))
     if focused_sources and is_document_overview_question(question):
         source_hint = ", ".join(sorted(focused_sources))
         queries.append(
@@ -598,6 +677,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         chunk for chunk in recalled_chunks
         if chunk_belongs_to_user(chunk, source_names, user_datasets)
     ]
+    recalled_chunks = rerank_recalled_chunks(recalled_chunks, request.question)
     if focused_sources:
         recalled_chunks = [
             chunk for chunk in recalled_chunks
@@ -673,6 +753,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
 Answer only from the uploaded PDF context below. Start PDF-backed answers with "From your uploaded PDFs:".
 Use source names from [Source: ...]. Do not invent facts or cite chat history.
 For vague document-overview questions, summarize what the recalled PDF context actually shows and say when only part of the PDF was recalled.
+For incident questions, use close spelling variants found in the PDF context; if the user says "Jeetpur" and the PDF says "Jitpur", answer as the likely matching entry and mention the spelling difference.
 If context is insufficient, return the uploaded-document not-found message.
 Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 
