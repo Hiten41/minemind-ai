@@ -18,7 +18,7 @@ const BASE = configuredApiBase || (
 )
 const TOKEN_KEY = 'minemind_token'
 const AUTH_TIMEOUT_MS = 15000
-const QUERY_TIMEOUT_MS = 70000
+const QUERY_TIMEOUT_MS = 120000
 
 type ChatHistoryItem = {
   role: string
@@ -63,7 +63,7 @@ async function fetchWithTimeout(
     return await fetch(input, { ...init, signal: controller.signal })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('The server is taking too long to respond. Please try again.')
+      throw new Error('MineMind is still reading your document memory. Please try a narrower question or ask again in a moment.')
     }
     throw error
   } finally {
@@ -190,6 +190,23 @@ export async function getDocumentsPage(options: {
     headers: authHeaders()
   })
   return parseJson<DocumentPage>(res, 'Failed to fetch docs')
+}
+
+export async function getDocumentFile(documentId: string): Promise<Blob> {
+  const res = await fetch(apiUrl(`/api/documents/${documentId}/file`), {
+    headers: authHeaders()
+  })
+  if (!res.ok) {
+    let detail = 'Original file is not available for preview'
+    try {
+      const body = await res.json()
+      detail = body.detail ?? detail
+    } catch {
+      // File endpoints can also return non-JSON errors.
+    }
+    throw new Error(detail)
+  }
+  return res.blob()
 }
 
 export async function improveMemory(): Promise<{ status: string; message: string }> {

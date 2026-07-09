@@ -242,9 +242,10 @@ export default function AnalyticsPage() {
           />
         </section>
 
-        <div className="mt-8 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)]">
+        <div className="mt-8 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
           <SectionShell eyebrow="Monthly Trend" title="Incident capture over time" className="min-h-[430px]">
-            <div className="h-[340px] min-w-[320px]">
+            <div className="h-[340px] min-w-0 overflow-x-auto">
+              <div className="h-full min-w-[260px] sm:min-w-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartMonths} margin={{ top: 12, right: 8, left: -18, bottom: 8 }}>
                   <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
@@ -263,11 +264,12 @@ export default function AnalyticsPage() {
                   <Bar dataKey="count" fill="#d7b779" radius={[12, 12, 4, 4]} maxBarSize={74} />
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             </div>
           </SectionShell>
 
           <SectionShell eyebrow="Source Mix" title="Document distribution" className="min-h-[430px]">
-            <div className="h-[238px]">
+            <div className="h-[238px] min-w-0 overflow-hidden">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie

@@ -1,5 +1,7 @@
 import os
 import asyncio
+import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -53,9 +55,32 @@ os.environ.setdefault("EMBEDDING_TOKENIZER", _default_embedding_tokenizer())
 os.environ.setdefault("HUGGINGFACE_TOKENIZER", os.environ["EMBEDDING_TOKENIZER"])
 
 import cognee
-from cognee import SearchType
+from cognee.api.v1.search import SearchType
 
 MemoryChunk = dict[str, str]
+PERF_DEBUG = os.getenv("MINEMIND_PERF_DEBUG", "false").lower() == "true"
+PERF_LOG_PATH = Path(
+    os.getenv(
+        "MINEMIND_PERF_LOG",
+        str(Path(__file__).resolve().parents[1] / ".cognee" / "query_timings.jsonl"),
+    )
+)
+COGNEE_SEARCH_ONLY_CONTEXT = os.getenv("COGNEE_SEARCH_ONLY_CONTEXT", "true").lower() != "false"
+
+
+def _perf_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 2)
+
+
+def _write_perf_event(event: dict) -> None:
+    if not PERF_DEBUG:
+        return
+    try:
+        PERF_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with PERF_LOG_PATH.open("a", encoding="utf-8") as perf_log:
+            perf_log.write(json.dumps(event, ensure_ascii=True) + "\n")
+    except Exception as exc:
+        print(f"Cognee perf log failed: {exc}")
 
 
 def _env(name: str, default: str = "") -> str:
@@ -145,6 +170,19 @@ def _text_from_cloud_result(result: Any) -> str:
     if isinstance(result, str):
         return result
     if isinstance(result, dict):
+        search_results = result.get("search_result")
+        if isinstance(search_results, str):
+            return search_results
+        if isinstance(search_results, list):
+            texts = []
+            for item in search_results:
+                if not isinstance(item, dict):
+                    continue
+                value = item.get("text") or item.get("content") or item.get("context")
+                if value:
+                    texts.append(str(value))
+            if texts:
+                return "\n\n".join(texts[:6])
         for key in ("text", "content", "context", "answer", "summary"):
             value = result.get(key)
             if value:
@@ -159,6 +197,15 @@ def _source_from_cloud_result(result: Any, index: int) -> str:
             value = result.get(key)
             if value:
                 return str(value)
+        search_results = result.get("search_result")
+        if isinstance(search_results, list):
+            for item in search_results:
+                if not isinstance(item, dict):
+                    continue
+                for key in ("document_name", "source", "title", "name", "file_name"):
+                    value = item.get(key)
+                    if value:
+                        return str(value)
         references = result.get("references")
         if isinstance(references, list) and references:
             first = references[0]
@@ -347,7 +394,11 @@ def _chunk_text(result: object) -> str:
     return str(result)
 
 
-async def query_memory(question: str, datasets: list[str] | None = None) -> list[MemoryChunk]:
+async def query_memory(
+    question: str,
+    datasets: list[str] | None = None,
+    top_k: int = 4,
+) -> list[MemoryChunk]:
     """
     Query Cognee memory.
     Uses correct v1.0 API: cognee.recall()
@@ -358,34 +409,62 @@ async def query_memory(question: str, datasets: list[str] | None = None) -> list
         if not datasets:
             return []
         if using_cognee_cloud():
+            request_start = time.perf_counter()
             results = await _cloud_post_json("search", {
                 "searchType": "CHUNKS",
                 "datasets": datasets,
                 "query": question,
-                "topK": 10,
-                "onlyContext": False,
+                "topK": top_k,
+                "onlyContext": COGNEE_SEARCH_ONLY_CONTEXT,
                 "verbose": False,
                 "includeReferences": True,
-                "scope": "graph",
             })
-            return _cloud_results_to_chunks(results)
+            request_ms = _perf_ms(request_start)
 
+            parse_start = time.perf_counter()
+            chunks = _cloud_results_to_chunks(results)
+            parse_ms = _perf_ms(parse_start)
+            _write_perf_event({
+                "event": "cognee_cloud_search",
+                "search_type": "CHUNKS",
+                "only_context": COGNEE_SEARCH_ONLY_CONTEXT,
+                "datasets": len(datasets),
+                "top_k": top_k,
+                "chunks": len(chunks),
+                "timings_ms": {
+                    "cloud_request_ms": request_ms,
+                    "result_parse_ms": parse_ms,
+                    "total_ms": round(request_ms + parse_ms, 2),
+                },
+            })
+            return chunks
+
+        recall_start = time.perf_counter()
         results = await cognee.recall(
             query_text=question,
             query_type=SearchType.CHUNKS,
-            datasets=datasets
+            datasets=datasets,
+            top_k=top_k
         )
+        recall_ms = _perf_ms(recall_start)
+        parse_start = time.perf_counter()
         chunks: list[MemoryChunk] = []
         for index, r in enumerate(results, start=1):
-            print(f"Cognee recall result {index} attributes:", dir(r))
-            print(
-                "Cognee recall result vars:",
-                vars(r) if hasattr(r, "__dict__") else str(r)
-            )
             chunks.append({
                 "text": _chunk_text(r),
                 "source": _source_name_from_result(r, index),
             })
+        _write_perf_event({
+            "event": "cognee_local_recall",
+            "search_type": "CHUNKS",
+            "datasets": len(datasets),
+            "top_k": top_k,
+            "chunks": len(chunks),
+            "timings_ms": {
+                "recall_ms": recall_ms,
+                "result_parse_ms": _perf_ms(parse_start),
+            },
+        })
         return chunks
     except Exception as e:
         print(f"Recall error: {e}")

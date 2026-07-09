@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,19 +15,16 @@ from services.advanced_ai import (
     confidence_notes,
     detect_agent_mode,
     detect_user_role,
-    hybrid_retrieve,
 )
 from services.auth_service import (
     current_user,
-    dataset_names_for_documents,
     list_documents,
     list_chat_messages,
     save_chat_message,
     search_chat_messages,
     user_dataset_names,
 )
-from services.cognee_service import query_memory, query_memory_temporal
-from services.document_search import rank_relevant_documents, search_uploaded_texts
+from services.cognee_service import query_memory
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -50,6 +49,21 @@ if APP_LLM_PROVIDER == "groq":
 
 router = APIRouter()
 MemoryChunk = dict[str, str]
+MAX_RECALLED_CHUNKS = 4
+MAX_CHUNK_SNIPPET_CHARS = 650
+MAX_CONTEXT_CHARS = 2800
+RETRIEVAL_CACHE_TTL_SECONDS = 300
+RetrievalCacheKey = tuple[str, str, tuple[str, ...]]
+RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
+AnswerCacheKey = tuple[str, str, tuple[str, ...]]
+ANSWER_CACHE: dict[AnswerCacheKey, tuple[float, dict]] = {}
+PERF_DEBUG = os.getenv("MINEMIND_PERF_DEBUG", "false").lower() == "true"
+PERF_LOG_PATH = Path(
+    os.getenv(
+        "MINEMIND_PERF_LOG",
+        str(Path(__file__).resolve().parents[1] / ".cognee" / "query_timings.jsonl"),
+    )
+)
 
 META_SOURCE_TITLES = {
     "conversation history",
@@ -57,6 +71,26 @@ META_SOURCE_TITLES = {
     "memory context",
     "mining operations and safety",
 }
+
+NO_DOCUMENT_MATCH_MESSAGE = (
+    "I could not find specific information about this in your uploaded documents. "
+    "Please make sure the relevant documents are uploaded."
+)
+
+
+def perf_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 2)
+
+
+def write_perf_event(event: dict) -> None:
+    if not PERF_DEBUG:
+        return
+    try:
+        PERF_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with PERF_LOG_PATH.open("a", encoding="utf-8") as perf_log:
+            perf_log.write(json.dumps(event, ensure_ascii=True) + "\n")
+    except Exception as exc:
+        print(f"MineMind perf log failed: {exc}")
 
 TEMPORAL_KEYWORDS = [
     "before", "after", "between", "when", "during",
@@ -74,6 +108,11 @@ if LLM_MODEL.startswith("groq/"):
     LLM_PROVIDER = "groq"
 if LLM_MODEL == "llama3-8b-8192":
     LLM_MODEL = "llama-3.1-8b-instant"
+ANSWER_LLM_MODEL = os.getenv("ANSWER_LLM_MODEL", LLM_MODEL).strip() or LLM_MODEL
+if ANSWER_LLM_MODEL.startswith("groq/"):
+    ANSWER_LLM_MODEL = ANSWER_LLM_MODEL.split("/", 1)[1]
+if ANSWER_LLM_MODEL == "llama3-8b-8192":
+    ANSWER_LLM_MODEL = "llama-3.1-8b-instant"
 
 def create_llm_client() -> AsyncOpenAI:
     if LLM_PROVIDER == "groq":
@@ -171,10 +210,52 @@ def ensure_pdf_answer_is_labeled(result: dict) -> dict:
     return result
 
 
+def prompt_snippet(value: object, limit: int = 500) -> str:
+    text = " ".join(str(value or "").split())
+    noisy_markers = ("{'dataset_id':", "'search_result':", '"search_result":')
+    if any(marker in text for marker in noisy_markers):
+        text = text.split(noisy_markers[0], 1)[0] if noisy_markers[0] in text else text
+        text = text.split(noisy_markers[1], 1)[0] if noisy_markers[1] in text else text
+        text = text.split(noisy_markers[2], 1)[0] if noisy_markers[2] in text else text
+        text = text.strip() or "[previous raw retrieval output omitted]"
+    if len(text) > limit:
+        return f"{text[:limit].rstrip()}..."
+    return text
+
+
 def chunk_text(chunk: MemoryChunk | str) -> str:
     if isinstance(chunk, dict):
         return str(chunk.get("text", ""))
     return str(chunk)
+
+
+def cache_safe_chunks(chunks: list[MemoryChunk | str]) -> list[MemoryChunk | str]:
+    safe_chunks: list[MemoryChunk | str] = []
+    for chunk in chunks:
+        safe_chunks.append(dict(chunk) if isinstance(chunk, dict) else str(chunk))
+    return safe_chunks
+
+
+def normalized_question_key(question: str) -> str:
+    return " ".join(question.lower().split())
+
+
+async def cached_query_memory(
+    user_id: str,
+    question: str,
+    datasets: list[str],
+) -> list[MemoryChunk | str]:
+    normalized_question = normalized_question_key(question)
+    cache_key: RetrievalCacheKey = (user_id, normalized_question, tuple(datasets))
+    cached = RETRIEVAL_CACHE.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] < RETRIEVAL_CACHE_TTL_SECONDS:
+        return cache_safe_chunks(cached[1])
+
+    chunks = await query_memory(question, datasets)
+    chunks = cache_safe_chunks(chunks[:MAX_RECALLED_CHUNKS])
+    RETRIEVAL_CACHE[cache_key] = (now, chunks)
+    return cache_safe_chunks(chunks)
 
 
 def chunk_source(chunk: MemoryChunk | str, index: int, source_names: dict[str, str]) -> str:
@@ -195,6 +276,17 @@ def chunk_source(chunk: MemoryChunk | str, index: int, source_names: dict[str, s
             dataset = line.split(":", 1)[1].strip()
             return source_names.get(dataset, dataset)
     return f"Dataset chunk {index}"
+
+
+def chunk_belongs_to_user(
+    chunk: MemoryChunk | str,
+    source_names: dict[str, str],
+    user_datasets: list[str],
+) -> bool:
+    allowed_sources = {source.lower() for source in source_names.values()}
+    allowed_sources.update(dataset.lower() for dataset in user_datasets)
+    source = chunk_source(chunk, 1, source_names).lower()
+    return source in allowed_sources
 
 
 def normalize_sources(result: dict, chunks: list[MemoryChunk | str], source_names: dict[str, str]) -> dict:
@@ -260,6 +352,8 @@ def focused_source_names(question: str, history: list, docs: list[dict]) -> set[
 
 @router.post("/api/query", response_model=QueryResponse)
 async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current_user)):
+    total_start = time.perf_counter()
+    timings: dict[str, float] = {}
     small_talk_answer = conversational_reply(request.question)
     if small_talk_answer is not None:
         query_response = QueryResponse(
@@ -285,7 +379,11 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         )
         return query_response
 
+    stage_start = time.perf_counter()
     docs = list_documents(user["id"])
+    timings["document_metadata_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
     agent_mode = detect_agent_mode(request.question)
     user_role = detect_user_role(request.question)
     query_type = "temporal" if is_temporal_question(request.question) else "semantic"
@@ -294,150 +392,147 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         for doc in docs
     }
     focused_sources = focused_source_names(request.question, request.chat_history, docs)
-    relevant_docs = rank_relevant_documents(
-        user["id"],
-        request.question,
-        focused_sources=focused_sources or None,
-    )
-    datasets = dataset_names_for_documents(user["id"], relevant_docs)
-    if not datasets:
-        datasets = user_dataset_names(user["id"])[:40]
-    allowed_local_sources = focused_sources or {
-        str(doc["name"]).lower() for doc in relevant_docs
-    }
-    retrieval_query = (
-        f"{request.question}\n"
-        "Related legal terms: fatal accident, death, killed, deceased, "
-        "mine accident, notice, inquiry, report, manager, owner, agent, inspector."
-    )
-    if query_type == "temporal":
-        temporal_texts = await query_memory_temporal(retrieval_query, datasets)
-        recalled_chunks: list[MemoryChunk | str] = [
-            {"text": text, "source": f"Temporal memory {index}"}
-            for index, text in enumerate(temporal_texts, start=1)
-        ]
-    else:
-        recalled_chunks = await query_memory(retrieval_query, datasets)
-    local_texts = search_uploaded_texts(
-        user["id"],
-        request.question,
-        allowed_sources=allowed_local_sources or None,
-    )
     if focused_sources:
-        recalled_chunks = [
-            chunk for chunk in recalled_chunks
-            if chunk_source(chunk, 1, source_names).lower() in focused_sources
-        ]
-    hybrid_chunks = hybrid_retrieve(
+        user_datasets = [
+            str(doc["dataset_name"])
+            for doc in docs
+            if str(doc["name"]).lower() in focused_sources
+        ][:MAX_RECALLED_CHUNKS]
+    else:
+        user_datasets = user_dataset_names(user["id"])[:40]
+    timings["routing_and_dataset_scope_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
+    answer_cache_key: AnswerCacheKey = (
         user["id"],
-        request.question,
-        mode=agent_mode,
-        limit=6,
-        allowed_sources=focused_sources or None,
+        normalized_question_key(request.question),
+        tuple(user_datasets),
     )
-    recalled_texts = {chunk_text(chunk) for chunk in recalled_chunks}
-    for chunk in local_texts:
-        if chunk_text(chunk) not in recalled_texts:
-            recalled_chunks.append(chunk)
-            recalled_texts.add(chunk_text(chunk))
-    for chunk in hybrid_chunks:
-        if chunk_text(chunk) not in recalled_texts:
-            recalled_chunks.append(chunk)
-            recalled_texts.add(chunk_text(chunk))
-    pdf_context_found = bool(recalled_chunks)
-    evidence_citations = citations_from_chunks([
-        chunk for chunk in recalled_chunks
-        if isinstance(chunk, dict)
-    ])
-    # If we found any uploaded-PDF evidence, return a concise, evidence-backed
-    # reply immediately so the client always receives the match instead of a
-    # general LLM fallback that might omit explicit citation.
-    if evidence_citations:
-        sources = [cite.as_source() for cite in evidence_citations]
-        excerpts = []
-        for cite in evidence_citations[:4]:
-            excerpts.append(f"[Source: {cite.title}] {cite.excerpt}")
-        answer_text = "From your uploaded PDFs: " + "\n\n".join(excerpts)
-        reasoning = (
-            "Returned direct matches from the user's uploaded PDFs. "
-            "See the `sources` field for citations and excerpts."
-        )
-        confidence = 0.9 if any(c.relevance >= 0.7 for c in evidence_citations) else 0.8
-        query_response = QueryResponse(
-            answer=answer_text,
-            reasoning=reasoning,
-            sources=sources,
-            related_memories=[],
-            confidence=confidence,
-            mode=agent_mode,
-            action_plan=action_plan_for_mode(agent_mode, evidence_citations),
-            confidence_notes=confidence_notes(evidence_citations),
-            query_type=query_type,
-        )
+    cached_answer = ANSWER_CACHE.get(answer_cache_key)
+    now = time.monotonic()
+    if cached_answer and now - cached_answer[0] < RETRIEVAL_CACHE_TTL_SECONDS:
+        timings["answer_cache_check_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "answer_hit",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "timings_ms": timings,
+        })
+        result = dict(cached_answer[1])
+        query_response = QueryResponse(**result)
         save_chat_message(user["id"], "user", request.question)
         save_chat_message(
             user["id"],
             "assistant",
             query_response.answer,
             query_response.reasoning,
-            query_response.sources,
-            query_response.related_memories,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
             query_response.confidence,
         )
         return query_response
+    timings["answer_cache_check_ms"] = perf_ms(stage_start)
+
+    async def timed_cognee_retrieval() -> list[MemoryChunk | str]:
+        retrieval_start = time.perf_counter()
+        chunks = await cached_query_memory(user["id"], request.question, user_datasets)
+        timings["cognee_retrieval_or_cache_ms"] = perf_ms(retrieval_start)
+        return chunks
+
+    async def timed_chat_search():
+        chat_start = time.perf_counter()
+        chat_items = await asyncio.to_thread(search_chat_messages, user["id"], request.question, 2)
+        timings["chat_history_search_ms"] = perf_ms(chat_start)
+        return chat_items
+
+    stage_start = time.perf_counter()
+    recalled_chunks, relevant_chat_items = await asyncio.gather(
+        timed_cognee_retrieval(),
+        timed_chat_search(),
+    )
+    timings["parallel_retrieval_wait_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
+    recalled_chunks = [
+        chunk for chunk in recalled_chunks
+        if chunk_belongs_to_user(chunk, source_names, user_datasets)
+    ]
+    if focused_sources:
+        recalled_chunks = [
+            chunk for chunk in recalled_chunks
+            if chunk_source(chunk, 1, source_names).lower() in focused_sources
+        ]
+    timings["retrieval_filter_ms"] = perf_ms(stage_start)
+    if not recalled_chunks:
+        query_response = QueryResponse(
+            answer=NO_DOCUMENT_MATCH_MESSAGE,
+            reasoning="Cognee recall returned no relevant uploaded document chunks.",
+            sources=[],
+            related_memories=[],
+            confidence=0.0,
+            mode=agent_mode,
+            action_plan=[],
+            confidence_notes="No uploaded document evidence was returned by Cognee recall.",
+            query_type=query_type,
+        )
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "chunks": 0,
+            "timings_ms": timings,
+        })
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [],
+            [],
+            query_response.confidence,
+        )
+        return query_response
+
+    stage_start = time.perf_counter()
+    pdf_context_found = True
+    evidence_citations = citations_from_chunks([
+        chunk for chunk in recalled_chunks
+        if isinstance(chunk, dict)
+    ])
     context = "\n\n---\n\n".join(
-        f"[Source: {chunk_source(chunk, index, source_names)}]\n{chunk_text(chunk)}"
-        for index, chunk in enumerate(recalled_chunks[:6], start=1)
+        f"[Source: {chunk_source(chunk, index, source_names)}]\n{prompt_snippet(chunk_text(chunk), MAX_CHUNK_SNIPPET_CHARS)}"
+        for index, chunk in enumerate(recalled_chunks[:MAX_RECALLED_CHUNKS], start=1)
     ) if pdf_context_found else "No relevant uploaded PDF chunks were recalled."
-    context = context[:8000]
+    context = context[:MAX_CONTEXT_CHARS]
 
     history = "\n".join([
-        f"{m.role.upper()}: {m.content}"
-        for m in request.chat_history[-6:]
+        f"{m.role.upper()}: {prompt_snippet(m.content, 300)}"
+        for m in request.chat_history[-4:]
     ])
     relevant_history = "\n".join([
-        f"{str(m['role']).upper()}: {str(m['content'])[:700]}"
-        for m in search_chat_messages(user["id"], request.question, limit=6)
+        f"{str(m['role']).upper()}: {prompt_snippet(m['content'], 300)}"
+        for m in relevant_chat_items
     ])
+    timings["context_and_prompt_assembly_ms"] = perf_ms(stage_start)
 
-    prompt = f"""You are MineMind AI, an expert AI assistant
-for mining operations and safety.
+    prompt = f"""You are MineMind AI, a mining safety assistant.
+Answer only from the uploaded PDF context below. Start PDF-backed answers with "From your uploaded PDFs:".
+Use source names from [Source: ...]. Do not invent facts or cite chat history.
+If context is insufficient, return the uploaded-document not-found message.
+Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 
-Answer priority:
-1. Search the uploaded PDF context first and use it whenever it directly or
-   strongly answers the question.
-2. If the uploaded PDF context answers the question, start the answer with
-   "From your uploaded PDFs:" and cite only source names from the [Source: ...]
-   headers. Never cite "Uploaded PDF chunk 1" or similar chunk labels.
-   Use all relevant uploaded chunks together. For legal or procedure questions,
-   include every duty found in the chunks, such as notices, reports, inquiry,
-   forms, responsible persons, and preserving an accident site.
-3. If the uploaded PDF context is empty, unrelated, or not enough to answer,
-   start the answer with
-   "I could not find this in your uploaded PDFs. General answer:" and then give
-   a concise general answer.
-4. Never present general fallback knowledge as if it came from a PDF.
-5. Do not cite conversation history, chat history, or this system prompt as a
-   source.
-6. For PDF-backed answers, leave related_memories as an empty list unless the
-   related memory is from the same uploaded PDF source.
-7. Adapt the answer for ROLE_HINT={user_role}. If role is "worker", use simple
-   direct safety language. If role is "manager", include ownership and next
-   actions. If role is "legal", emphasize exact duties and source names.
-8. The selected task mode is AGENT_MODE={agent_mode}. Shape the answer like
-   that workflow where useful, but do not invent facts outside the evidence.
-9. QUERY_TYPE={query_type}. If QUERY_TYPE is temporal, reason across time,
-   sequence, changes, before/after relationships, and timeline evidence.
-
-UPLOADED_PDF_CONTEXT_AVAILABLE: {pdf_context_found}
-
-UPLOADED PDF CONTEXT FROM COGNEE:
+COGNEE PDF CONTEXT:
 {context}
 
-CONVERSATION HISTORY:
+RECENT CHAT:
 {history}
 
-RELEVANT LONG-TERM CHAT MEMORY:
+OLDER CHAT HINTS:
 {relevant_history or "No directly relevant older chat messages found."}
 
 QUESTION: {request.question}
@@ -463,14 +558,18 @@ Respond ONLY with this exact JSON format, no other text:
 }}"""
 
     try:
+        stage_start = time.perf_counter()
         client = create_llm_client()
         response = await client.chat.completions.create(
-            model=LLM_MODEL,
+            model=ANSWER_LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            max_tokens=950,
+            max_tokens=700,
             temperature=0.1
         )
+        timings["groq_generation_ms"] = perf_ms(stage_start)
+
+        stage_start = time.perf_counter()
         content = response.choices[0].message.content or "{}"
         result = remove_meta_results(json.loads(content))
         if not pdf_context_found or answer_is_general_fallback(result):
@@ -499,7 +598,11 @@ Respond ONLY with this exact JSON format, no other text:
             reasoning = str(result.get("reasoning") or "").strip()
             note = "Used temporal graph traversal"
             result["reasoning"] = f"{reasoning}. {note}" if reasoning and note not in reasoning else note
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(result))
         query_response = QueryResponse(**result)
+        timings["postprocess_ms"] = perf_ms(stage_start)
+
+        stage_start = time.perf_counter()
         save_chat_message(user["id"], "user", request.question)
         save_chat_message(
             user["id"],
@@ -510,8 +613,29 @@ Respond ONLY with this exact JSON format, no other text:
             [memory.model_dump() for memory in query_response.related_memories],
             query_response.confidence,
         )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "chunks": len(recalled_chunks),
+            "model": ANSWER_LLM_MODEL,
+            "timings_ms": timings,
+        })
         return query_response
     except Exception as e:
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "error",
+            "question": request.question,
+            "datasets": len(user_datasets) if "user_datasets" in locals() else 0,
+            "chunks": len(recalled_chunks) if "recalled_chunks" in locals() else 0,
+            "error": str(e),
+            "timings_ms": timings,
+        })
         return QueryResponse(
             answer=f"Error generating answer: {str(e)}",
             reasoning="Error occurred",

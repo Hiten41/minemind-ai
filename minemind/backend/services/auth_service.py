@@ -79,6 +79,8 @@ def init_auth_store() -> None:
         }
         if "text_path" not in columns:
             conn.execute("ALTER TABLE documents ADD COLUMN text_path TEXT")
+        if "file_path" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN file_path TEXT")
         if "risk_signals" not in columns:
             conn.execute("ALTER TABLE documents ADD COLUMN risk_signals TEXT NOT NULL DEFAULT '{}'")
         if "risk_level" not in columns:
@@ -202,8 +204,8 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
         conn.execute(
             """
             INSERT INTO documents
-            (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, risk_signals, risk_level)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 doc["id"],
@@ -215,6 +217,7 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
                 doc["uploaded_at"],
                 doc["dataset_name"],
                 doc.get("text_path"),
+                doc.get("file_path"),
                 json.dumps(doc.get("risk_signals") or {}),
                 doc.get("risk_level", "none"),
             ),
@@ -242,7 +245,7 @@ def list_documents(user_id: str) -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, risk_signals, risk_level
+            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level
             FROM documents
             WHERE user_id = ?
             ORDER BY uploaded_at DESC
@@ -274,7 +277,7 @@ def list_documents_page(
         ).fetchone()["count"]
         rows = conn.execute(
             f"""
-            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, risk_signals, risk_level
+            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level
             FROM documents
             WHERE {where_clause}
             ORDER BY uploaded_at DESC
@@ -369,8 +372,14 @@ def save_chat_message(
                 role,
                 content,
                 reasoning,
-                json.dumps(sources or []),
-                json.dumps(related_memories or []),
+                json.dumps([
+                    s.dict() if hasattr(s, "dict") else s
+                    for s in (sources or [])
+                ]),
+                json.dumps([
+                    m.dict() if hasattr(m, "dict") else m
+                    for m in (related_memories or [])
+                ]),
                 confidence,
             ),
         )

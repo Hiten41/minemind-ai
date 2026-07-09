@@ -153,8 +153,8 @@ export default function IncidentsPage() {
     >
       <PremiumNav />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:112px_112px] opacity-30" />
-      <div className="pointer-events-none absolute right-[8%] top-[18%] h-[420px] w-[420px] rounded-full bg-[#8fb8d8]/[0.07] blur-3xl" />
-      <div className="pointer-events-none absolute left-[8%] bottom-[8%] h-[360px] w-[360px] rounded-full bg-white/[0.04] blur-3xl" />
+      <div className="pointer-events-none absolute right-[8%] top-[18%] h-[min(420px,82vw)] w-[min(420px,82vw)] rounded-full bg-[#8fb8d8]/[0.07] blur-3xl" />
+      <div className="pointer-events-none absolute left-[8%] bottom-[8%] h-[min(360px,78vw)] w-[min(360px,78vw)] rounded-full bg-white/[0.04] blur-3xl" />
 
       <div className="relative z-10 mx-auto max-w-7xl">
         <motion.header variants={itemVariants} className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
@@ -279,7 +279,7 @@ export default function IncidentsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="tracked-label text-[9px] text-white/32">{selectedCase.id}</p>
-                    <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-tight text-white">
+                    <h2 className="mt-3 break-words text-2xl font-semibold leading-tight tracking-tight text-white">
                       {selectedCase.title}
                     </h2>
                   </div>

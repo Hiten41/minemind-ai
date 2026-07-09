@@ -40,7 +40,7 @@ export default function PremiumNav() {
         initial={{ x: '-50%', y: -18, opacity: 0 }}
         animate={{ x: '-50%', y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 90, damping: 18 }}
-        className="glass-depth-subtle fixed left-1/2 top-3 z-50 flex w-[calc(100vw-2rem)] max-w-max items-center justify-between gap-1 overflow-x-auto rounded-full px-2 py-2 sm:top-5 sm:w-auto sm:justify-start"
+        className="glass-depth-subtle fixed left-1/2 top-3 z-50 flex w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] items-center justify-start gap-1 overflow-x-auto rounded-full px-2 py-2 sm:top-5 sm:w-auto sm:max-w-[calc(100vw-2rem)]"
       >
         {items.map((item) => {
           const active = pathname === item.href
