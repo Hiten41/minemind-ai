@@ -258,6 +258,36 @@ async def cached_query_memory(
     return cache_safe_chunks(chunks)
 
 
+def dedupe_chunks(chunks: list[MemoryChunk | str]) -> list[MemoryChunk | str]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[MemoryChunk | str] = []
+    for chunk in chunks:
+        source = str(chunk.get("source", "")) if isinstance(chunk, dict) else ""
+        text = chunk_text(chunk)
+        key = (source.lower(), text[:500].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(chunk)
+    return unique
+
+
+async def cached_query_memory_variants(
+    user_id: str,
+    queries: list[str],
+    datasets: list[str],
+) -> list[MemoryChunk | str]:
+    results = await asyncio.gather(*[
+        cached_query_memory(user_id, query, datasets)
+        for query in queries
+    ])
+    return dedupe_chunks([
+        chunk
+        for chunks in results
+        for chunk in chunks
+    ])[:MAX_RECALLED_CHUNKS]
+
+
 def chunk_source(chunk: MemoryChunk | str, index: int, source_names: dict[str, str]) -> str:
     if isinstance(chunk, dict):
         source = str(chunk.get("source") or "").strip()
@@ -327,9 +357,15 @@ def normalize_sources(result: dict, chunks: list[MemoryChunk | str], source_name
     return result
 
 
+def history_item_content(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("content") or "")
+    return str(getattr(item, "content", ""))
+
+
 def focused_source_names(question: str, history: list, docs: list[dict]) -> set[str]:
     recent_text = " ".join(
-        [question] + [str(item.content) for item in history[-4:]]
+        [question] + [history_item_content(item) for item in history[-6:]]
     ).lower()
     focused = {
         str(doc["name"]).lower()
@@ -348,6 +384,40 @@ def focused_source_names(question: str, history: list, docs: list[dict]) -> set[
         for stem, doc_name in stems.items()
         if stem and stem in recent_text
     }
+
+
+def is_document_overview_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(phrase in lowered for phrase in (
+        "what is listed",
+        "whats listed",
+        "what's listed",
+        "what is in this",
+        "what's in this",
+        "what does this pdf",
+        "what does the pdf",
+        "about this pdf",
+        "in this pdf",
+        "this pdf",
+    ))
+
+
+def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[str]:
+    queries: list[str] = []
+    lowered = question.lower()
+    if focused_sources and is_document_overview_question(question):
+        source_hint = ", ".join(sorted(focused_sources))
+        queries.append(
+            f"{source_hint} table of contents chapters preliminary definitions regulations scope application duties accidents explosives ventilation safety"
+        )
+    if focused_sources and "accident" in lowered:
+        source_hint = ", ".join(sorted(focused_sources))
+        queries.append(
+            f"{question} {source_hint} accident accidents dangerous occurrence injury fatality notice report regulation"
+        )
+    if not (focused_sources and is_document_overview_question(question)):
+        queries.append(question)
+    return list(dict.fromkeys(queries))
 
 
 @router.post("/api/query", response_model=QueryResponse)
@@ -400,12 +470,13 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         ][:MAX_RECALLED_CHUNKS]
     else:
         user_datasets = user_dataset_names(user["id"])[:40]
+    retrieval_queries = build_retrieval_queries(request.question, focused_sources)
     timings["routing_and_dataset_scope_ms"] = perf_ms(stage_start)
 
     stage_start = time.perf_counter()
     answer_cache_key: AnswerCacheKey = (
         user["id"],
-        normalized_question_key(request.question),
+        normalized_question_key(" || ".join(retrieval_queries)),
         tuple(user_datasets),
     )
     cached_answer = ANSWER_CACHE.get(answer_cache_key)
@@ -418,6 +489,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
             "cache": "answer_hit",
             "question": request.question,
             "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
             "timings_ms": timings,
         })
         result = dict(cached_answer[1])
@@ -437,7 +509,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
 
     async def timed_cognee_retrieval() -> list[MemoryChunk | str]:
         retrieval_start = time.perf_counter()
-        chunks = await cached_query_memory(user["id"], request.question, user_datasets)
+        chunks = await cached_query_memory_variants(user["id"], retrieval_queries, user_datasets)
         timings["cognee_retrieval_or_cache_ms"] = perf_ms(retrieval_start)
         return chunks
 
@@ -483,6 +555,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
             "cache": "miss",
             "question": request.question,
             "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
             "chunks": 0,
             "timings_ms": timings,
         })
@@ -523,6 +596,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     prompt = f"""You are MineMind AI, a mining safety assistant.
 Answer only from the uploaded PDF context below. Start PDF-backed answers with "From your uploaded PDFs:".
 Use source names from [Source: ...]. Do not invent facts or cite chat history.
+For vague document-overview questions, summarize what the recalled PDF context actually shows and say when only part of the PDF was recalled.
 If context is insufficient, return the uploaded-document not-found message.
 Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 
@@ -620,6 +694,7 @@ Respond ONLY with this exact JSON format, no other text:
             "cache": "miss",
             "question": request.question,
             "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
             "chunks": len(recalled_chunks),
             "model": ANSWER_LLM_MODEL,
             "timings_ms": timings,
@@ -632,6 +707,7 @@ Respond ONLY with this exact JSON format, no other text:
             "cache": "error",
             "question": request.question,
             "datasets": len(user_datasets) if "user_datasets" in locals() else 0,
+            "retrieval_queries": len(retrieval_queries) if "retrieval_queries" in locals() else 0,
             "chunks": len(recalled_chunks) if "recalled_chunks" in locals() else 0,
             "error": str(e),
             "timings_ms": timings,
