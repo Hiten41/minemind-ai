@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -419,6 +420,24 @@ def focused_source_names(question: str, history: list, docs: list[dict]) -> set[
     }
 
 
+def referenced_pdf_names(question: str) -> list[str]:
+    return [
+        match.group(0).strip(".,;:!?()[]{}\"'")
+        for match in re.finditer(r"[\w().-]+\.pdf", question, re.IGNORECASE)
+    ]
+
+
+def remove_referenced_pdf_names(question: str) -> str:
+    cleaned = question
+    for name in referenced_pdf_names(question):
+        cleaned = cleaned.replace(name, "the uploaded PDF")
+    return " ".join(cleaned.split())
+
+
+def has_unmatched_pdf_reference(question: str, focused_sources: set[str]) -> bool:
+    return bool(referenced_pdf_names(question) and not focused_sources)
+
+
 def is_document_overview_question(question: str) -> bool:
     lowered = question.lower()
     return any(phrase in lowered for phrase in (
@@ -456,6 +475,13 @@ def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[st
         queries.append(
             f"{question} {source_hint} accident accidents dangerous occurrence injury fatality notice report regulation"
         )
+    if has_unmatched_pdf_reference(question, focused_sources):
+        cleaned_question = remove_referenced_pdf_names(question)
+        queries.append(cleaned_question)
+        if "accident" in lowered:
+            queries.append(
+                f"{cleaned_question} major accidents mine accidents fatalities causes roof fall inundation explosion fire damp coal mines"
+            )
     if not (focused_sources and is_document_overview_question(question)):
         queries.append(question)
     return list(dict.fromkeys(queries))
