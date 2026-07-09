@@ -210,8 +210,41 @@ def ensure_pdf_answer_is_labeled(result: dict) -> dict:
     return result
 
 
+MOJIBAKE_REPLACEMENTS = {
+    "\u00e2\u0080\u0093": "-",
+    "\u00e2\u0080\u0094": "-",
+    "\u00e2\u0080\u0098": "'",
+    "\u00e2\u0080\u0099": "'",
+    "\u00e2\u0080\u009c": '"',
+    "\u00e2\u0080\u009d": '"',
+    "\u00e2\u0080\u00a6": "...",
+    "\u00c2\u00a0": " ",
+    "\u00c2": "",
+}
+
+
+def clean_display_text(value: object) -> str:
+    text = str(value or "")
+    for bad, good in MOJIBAKE_REPLACEMENTS.items():
+        text = text.replace(bad, good)
+    return text
+
+
+def clean_response_payload(value):
+    if isinstance(value, str):
+        return clean_display_text(value)
+    if isinstance(value, list):
+        return [clean_response_payload(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: clean_response_payload(item)
+            for key, item in value.items()
+        }
+    return value
+
+
 def prompt_snippet(value: object, limit: int = 500) -> str:
-    text = " ".join(str(value or "").split())
+    text = " ".join(clean_display_text(value).split())
     noisy_markers = ("{'dataset_id':", "'search_result':", '"search_result":')
     if any(marker in text for marker in noisy_markers):
         text = text.split(noisy_markers[0], 1)[0] if noisy_markers[0] in text else text
@@ -225,8 +258,8 @@ def prompt_snippet(value: object, limit: int = 500) -> str:
 
 def chunk_text(chunk: MemoryChunk | str) -> str:
     if isinstance(chunk, dict):
-        return str(chunk.get("text", ""))
-    return str(chunk)
+        return clean_display_text(chunk.get("text", ""))
+    return clean_display_text(chunk)
 
 
 def cache_safe_chunks(chunks: list[MemoryChunk | str]) -> list[MemoryChunk | str]:
@@ -390,10 +423,18 @@ def is_document_overview_question(question: str) -> bool:
     lowered = question.lower()
     return any(phrase in lowered for phrase in (
         "what is listed",
+        "wht is listed",
+        "what listed",
+        "wht listed",
         "whats listed",
         "what's listed",
+        "what all is listed",
+        "wht all is listed",
         "what is in this",
+        "wht is in this",
         "what's in this",
+        "what is in",
+        "wht is in",
         "what does this pdf",
         "what does the pdf",
         "about this pdf",
@@ -591,6 +632,15 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         f"{str(m['role']).upper()}: {prompt_snippet(m['content'], 300)}"
         for m in relevant_chat_items
     ])
+    overview_instruction = ""
+    if focused_sources and is_document_overview_question(request.question):
+        overview_instruction = (
+            "DOCUMENT OVERVIEW MODE:\n"
+            "- The user is asking what is inside/listed in the focused PDF.\n"
+            "- Do not answer only with the PDF title.\n"
+            "- Summarize the recalled context as a compact list of actual items shown, such as the regulation name, legal basis, chapter/section names, scope/application, definitions, duties, tables, or safety topics.\n"
+            "- If only the start of the PDF was recalled, say that the recalled portion shows those items, not the whole PDF.\n"
+        )
     timings["context_and_prompt_assembly_ms"] = perf_ms(stage_start)
 
     prompt = f"""You are MineMind AI, a mining safety assistant.
@@ -599,6 +649,8 @@ Use source names from [Source: ...]. Do not invent facts or cite chat history.
 For vague document-overview questions, summarize what the recalled PDF context actually shows and say when only part of the PDF was recalled.
 If context is insufficient, return the uploaded-document not-found message.
 Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
+
+{overview_instruction}
 
 COGNEE PDF CONTEXT:
 {context}
@@ -645,7 +697,7 @@ Respond ONLY with this exact JSON format, no other text:
 
         stage_start = time.perf_counter()
         content = response.choices[0].message.content or "{}"
-        result = remove_meta_results(json.loads(content))
+        result = clean_response_payload(remove_meta_results(json.loads(content)))
         if not pdf_context_found or answer_is_general_fallback(result):
             result = ensure_general_fallback_is_labeled(result)
         else:
