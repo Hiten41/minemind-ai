@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "risk-analysis-v5"
+CACHE_VERSION = "risk-analysis-v6"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -643,6 +643,15 @@ def counted_terms(text: str, terms: set[str], limit: int = 12) -> list[tuple[str
     return sorted(counts, key=lambda item: (item[1], item[0]), reverse=True)[:limit]
 
 
+def format_term_counts(items: list[tuple[str, int]]) -> str:
+    if not items:
+        return "none detected"
+    return ", ".join(
+        term if count <= 0 else f"{term} ({count})"
+        for term, count in items
+    )
+
+
 def build_document_risk_context(
     question: str,
     docs: list[dict],
@@ -666,11 +675,11 @@ def build_document_risk_context(
         equipment_counts = counted_terms(text, MINE_TERMS["equipment"], limit=8)
         action_counts = counted_terms(text, MINE_TERMS["actions"], limit=8)
         if not hazard_counts:
-            hazard_counts = [(term, 1) for term in (stored_intelligence.get("hazards") or [])[:12]]
+            hazard_counts = [(term, 0) for term in (stored_intelligence.get("hazards") or [])[:12]]
         if not equipment_counts:
-            equipment_counts = [(term, 1) for term in (stored_intelligence.get("equipment") or [])[:8]]
+            equipment_counts = [(term, 0) for term in (stored_intelligence.get("equipment") or [])[:8]]
         if not action_counts:
-            action_counts = [(term, 1) for term in (stored_intelligence.get("actions") or [])[:8]]
+            action_counts = [(term, 0) for term in (stored_intelligence.get("actions") or [])[:8]]
         risk_signals = {
             "violations": max(int((alert.get("risk_signals") or {}).get("violations", 0) or 0), int(stored_signals.get("violations", 0) or 0)),
             "equipment": max(int((alert.get("risk_signals") or {}).get("equipment", 0) or 0), int(stored_signals.get("equipment", 0) or 0)),
@@ -689,18 +698,9 @@ def build_document_risk_context(
                     f"{risk_signals.get('equipment', 0)} equipment issues, "
                     f"{risk_signals.get('hazards', 0)} hazards"
                 ),
-                "Top hazard terms: " + (
-                    ", ".join(f"{term} ({count})" for term, count in hazard_counts)
-                    if hazard_counts else "none detected"
-                ),
-                "Equipment-related terms: " + (
-                    ", ".join(f"{term} ({count})" for term, count in equipment_counts)
-                    if equipment_counts else "none detected"
-                ),
-                "Compliance/action terms: " + (
-                    ", ".join(f"{term} ({count})" for term, count in action_counts)
-                    if action_counts else "none detected"
-                ),
+                "Top hazard terms: " + format_term_counts(hazard_counts),
+                "Equipment-related terms: " + format_term_counts(equipment_counts),
+                "Compliance/action terms: " + format_term_counts(action_counts),
             ])
         )
     return "\n\n".join(lines)
