@@ -204,7 +204,7 @@ export default function EquipmentPage() {
   }, [error, loading])
 
   function askAboutEquipment(equipment: Equipment) {
-    router.push(`/chat?q=${encodeURIComponent(`Tell me about ${equipment.name} maintenance history and any associated incidents or safety concerns`)}`)
+    router.push(`/chat?q=${encodeURIComponent(`Where is ${equipment.name} mentioned in my uploaded documents, and what incidents, maintenance duties, or safety concerns are associated with it?`)}`)
   }
 
   return (

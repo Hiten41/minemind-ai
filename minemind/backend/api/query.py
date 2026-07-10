@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "risk-analysis-v6"
+CACHE_VERSION = "equipment-context-v7"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -706,6 +706,151 @@ def build_document_risk_context(
     return "\n\n".join(lines)
 
 
+def equipment_terms_in_question(question: str) -> list[str]:
+    lowered = question.lower()
+    return [
+        term for term in sorted(MINE_TERMS["equipment"], key=len, reverse=True)
+        if re.search(rf"\b{re.escape(term)}s?\b", lowered)
+    ]
+
+
+def is_equipment_context_question(question: str, agent_mode: str) -> bool:
+    lowered = question.lower()
+    return bool(equipment_terms_in_question(question)) and (
+        agent_mode == "equipment_troubleshooting"
+        or any(term in lowered for term in (
+            "mentioned",
+            "maintenance",
+            "incident",
+            "incidents",
+            "safety",
+            "concern",
+            "concerns",
+            "associated",
+            "history",
+            "equipment",
+        ))
+    )
+
+
+def build_equipment_context(
+    question: str,
+    docs: list[dict],
+    agent_mode: str,
+) -> str:
+    if not is_equipment_context_question(question, agent_mode):
+        return ""
+
+    target_terms = equipment_terms_in_question(question)
+    lines: list[str] = []
+    for doc in docs:
+        text = document_text(doc)
+        lowered = text.lower()
+        stored_intelligence = doc.get("intelligence_signals") or {}
+        stored_equipment = {str(term).lower() for term in stored_intelligence.get("equipment") or []}
+        matched_terms = [
+            term for term in target_terms
+            if term in stored_equipment or re.search(rf"\b{re.escape(term)}s?\b", lowered)
+        ]
+        if not matched_terms:
+            continue
+
+        stored_signals = doc.get("risk_signals") or {}
+        extracted = extract_doc_signals_from_text(text) if text.strip() else stored_intelligence
+        hazards = ", ".join((extracted.get("hazards") or [])[:10]) or "none detected"
+        actions = ", ".join((extracted.get("actions") or [])[:8]) or "none detected"
+        signal_counts = (
+            f"{int(stored_signals.get('violations', 0) or 0)} safety violations, "
+            f"{int(stored_signals.get('equipment', 0) or 0)} equipment issues, "
+            f"{int(stored_signals.get('hazards', 0) or 0)} hazards"
+        )
+        lines.append("\n".join([
+            f"[Equipment signal source: {doc.get('name')}]",
+            f"Matched equipment: {', '.join(matched_terms)}",
+            f"Document type: {doc.get('type')}",
+            f"Risk signal counts: {signal_counts}",
+            f"Associated hazard themes: {hazards}",
+            f"Associated compliance/action themes: {actions}",
+        ]))
+
+    return "\n\n".join(lines)
+
+
+def extract_doc_signals_from_text(text: str) -> dict[str, list[str]]:
+    lowered = text.lower()
+    return {
+        "hazards": sorted(term for term in MINE_TERMS["hazards"] if term in lowered),
+        "actions": sorted(term for term in MINE_TERMS["actions"] if term in lowered),
+        "equipment": sorted(term for term in MINE_TERMS["equipment"] if term in lowered),
+    }
+
+
+def equipment_context_result(
+    equipment_context: str,
+    chunks: list[MemoryChunk | str],
+    source_names: dict[str, str],
+    agent_mode: str,
+    query_type: str,
+) -> dict:
+    source_matches = re.findall(r"\[Equipment signal source:\s*(.*?)\]", equipment_context)
+    equipment_matches = re.findall(r"Matched equipment:\s*(.*)", equipment_context)
+    risk_matches = re.findall(r"Risk signal counts:\s*(.*)", equipment_context)
+    hazard_matches = re.findall(r"Associated hazard themes:\s*(.*)", equipment_context)
+    action_matches = re.findall(r"Associated compliance/action themes:\s*(.*)", equipment_context)
+    sources = list(dict.fromkeys(source_matches))
+    equipment_names = list(dict.fromkeys([
+        item.strip()
+        for match in equipment_matches
+        for item in match.split(",")
+        if item.strip()
+    ]))
+
+    supporting_excerpt = ""
+    for index, chunk in enumerate(chunks, start=1):
+        source = chunk_source(chunk, index, source_names)
+        if not sources or source in sources:
+            supporting_excerpt = prompt_snippet(chunk_text(chunk), 180)
+            break
+
+    equipment_label = ", ".join(name.title() for name in equipment_names) or "This equipment"
+    source_label = ", ".join(sources) or "your uploaded documents"
+    answer_parts = [
+        f"From your uploaded PDFs: {equipment_label} is mentioned in {source_label}.",
+        "I did not find a dedicated maintenance-history log for it, so I should not claim specific service dates or repairs.",
+    ]
+    if risk_matches:
+        answer_parts.append(f"The related document risk scan shows {risk_matches[0]}.")
+    if hazard_matches and hazard_matches[0] != "none detected":
+        answer_parts.append(f"Associated safety concern themes include {hazard_matches[0]}.")
+    if action_matches and action_matches[0] != "none detected":
+        answer_parts.append(f"Relevant duties/control themes include {action_matches[0]}.")
+    answer_parts.append(
+        "Treat this as an equipment mention plus surrounding safety context, not a confirmed maintenance-history record."
+    )
+
+    return {
+        "answer": " ".join(answer_parts),
+        "reasoning": (
+            "The equipment page selected an equipment signal extracted from uploaded document intelligence. "
+            "The answer separates confirmed mentions from missing maintenance-history records."
+        ),
+        "sources": [{
+            "title": sources[0] if sources else "Uploaded document",
+            "excerpt": supporting_excerpt or "Equipment signal extracted from uploaded document intelligence.",
+            "relevance": 0.88,
+        }],
+        "related_memories": [],
+        "confidence": 0.84,
+        "mode": agent_mode,
+        "action_plan": [
+            "Open the cited source and inspect the equipment mention.",
+            "Check whether a separate maintenance report exists before treating this as maintenance history.",
+        ],
+        "confidence_notes": "Moderate confidence: the equipment mention is confirmed, but no dedicated maintenance-history log was found.",
+        "query_type": query_type,
+    }
+
+
 def _context_line_value(context: str, label: str) -> str:
     prefix = f"{label}:"
     for line in context.splitlines():
@@ -800,6 +945,12 @@ def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[st
         queries.append(
             f"{source_hint} risk hazards unsafe accident fire gas methane dust ventilation blasting machinery electrical injury death safety violation equipment"
         )
+    equipment_terms = equipment_terms_in_question(question)
+    if equipment_terms:
+        equipment_hint = " ".join(equipment_terms)
+        queries.append(
+            f"{equipment_hint} equipment mention safety concern incident accident maintenance inspection repair duty regulation hazard"
+        )
     if has_unmatched_pdf_reference(question, focused_sources):
         cleaned_question = remove_referenced_pdf_names(question)
         queries.append(cleaned_question)
@@ -867,6 +1018,11 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         request.question,
         docs,
         focused_sources,
+        agent_mode,
+    )
+    equipment_context = build_equipment_context(
+        request.question,
+        docs,
         agent_mode,
     )
     timings["routing_and_dataset_scope_ms"] = perf_ms(stage_start)
@@ -966,6 +1122,41 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         write_perf_event({
             "event": "query",
             "cache": "miss_document_risk",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": len(recalled_chunks),
+            "timings_ms": timings,
+        })
+        return query_response
+    if equipment_context:
+        stage_start = time.perf_counter()
+        equipment_result = equipment_context_result(
+            equipment_context,
+            recalled_chunks,
+            source_names,
+            agent_mode,
+            query_type,
+        )
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(equipment_result))
+        query_response = QueryResponse(**equipment_result)
+        timings["equipment_context_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_equipment_context",
             "question": request.question,
             "datasets": len(user_datasets),
             "retrieval_queries": len(retrieval_queries),
