@@ -50,6 +50,7 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
   const [hasMoreDocuments, setHasMoreDocuments] = useState(false)
+  const [documentsLoading, setDocumentsLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [selectedType, setSelectedType] = useState('regulation')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -71,17 +72,30 @@ export default function DocumentsPage() {
   const sheenY = useTransform(smoothY, (value) => value * -10)
 
   useEffect(() => {
+    let cancelled = false
+
     setError('')
     setDocuments([])
     setTotalDocuments(0)
     setHasMoreDocuments(false)
+    setDocumentsLoading(true)
     getDocumentsPage({ limit: 50, type: selectedType })
       .then((page) => {
+        if (cancelled) return
         setDocuments(page.items)
         setTotalDocuments(page.total)
         setHasMoreDocuments(page.has_more)
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to fetch documents'))
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch documents')
+      })
+      .finally(() => {
+        if (!cancelled) setDocumentsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [selectedType])
 
   useEffect(() => {
@@ -220,11 +234,11 @@ export default function DocumentsPage() {
           <div className="grid grid-cols-2 gap-3 text-right">
             <div className="rounded-3xl border border-white/10 bg-white/[0.045] px-5 py-4 backdrop-blur-2xl">
               <p className="tracked-label text-[9px] text-white/32">Files</p>
-              <p className="mt-2 text-2xl font-semibold text-white/86">{documents.length}</p>
+              <p className="mt-2 text-2xl font-semibold text-white/86">{documentsLoading ? '...' : documents.length}</p>
             </div>
             <div className="rounded-3xl border border-white/10 bg-white/[0.045] px-5 py-4 backdrop-blur-2xl">
               <p className="tracked-label text-[9px] text-white/32">Indexed sections</p>
-              <p className="mt-2 text-2xl font-semibold text-white/86">{totalNodes}</p>
+              <p className="mt-2 text-2xl font-semibold text-white/86">{documentsLoading ? '...' : totalNodes}</p>
             </div>
           </div>
         </div>
@@ -276,7 +290,7 @@ export default function DocumentsPage() {
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white/88">Recent files</h2>
               </div>
               <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/46 backdrop-blur-xl">
-                {documents.length} of {totalDocuments || documents.length} items
+                {documentsLoading ? 'Loading files...' : `${documents.length} of ${totalDocuments || documents.length} items`}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -300,8 +314,20 @@ export default function DocumentsPage() {
             </div>
           </div>
 
-          {documents.length === 0 ? (
-          <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
+          {documentsLoading ? (
+            <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
+              <div>
+                <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/[0.05] text-white/58">
+                  <Loader2 className="h-7 w-7 animate-spin" strokeWidth={1.35} />
+                </div>
+                <p className="mt-5 text-xl font-semibold text-white/82">Loading files</p>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-white/42">
+                  Reading your indexed document memory.
+                </p>
+              </div>
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
               <div>
                 <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/[0.05] text-white/58">
                   <Layers3 className="h-7 w-7" strokeWidth={1.35} />

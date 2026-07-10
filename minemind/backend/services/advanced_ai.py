@@ -54,8 +54,15 @@ MINE_TERMS = {
         "owner", "agent", "inspector", "form", "register", "maintenance",
     },
     "equipment": {
-        "pump", "conveyor", "drill", "ventilator", "fan", "loader", "dumper",
-        "rope", "winder", "cage", "machinery", "transformer", "switchgear",
+        "air compressor", "boiler", "cage", "compressor", "conveyor",
+        "diesel engine", "diesel loco", "drill", "dumper", "electrical installation",
+        "fan", "flameproof apparatus", "foundry", "gas engine", "gasoline engine",
+        "haulage", "hydraulic turbine", "loader", "locomotive", "machinery",
+        "main fan", "mechanical ventilator", "mineral dressing", "oil engine",
+        "pit cage", "pump", "pumping", "rope", "safety lamp", "self-rescuer",
+        "shaft", "smithy", "steam turbine", "switchgear", "transformer",
+        "ventilation fan", "ventilator", "water wheel", "winder", "winding",
+        "workshop",
     },
 }
 

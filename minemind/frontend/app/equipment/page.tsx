@@ -32,6 +32,22 @@ function deriveLastInspection(text: string): string {
   return dateMatch?.[0] ?? 'Recorded in your uploaded documents'
 }
 
+const riskRank: Record<Equipment['risk'], number> = {
+  Low: 0,
+  Medium: 1,
+  High: 2
+}
+
+const statusRank: Record<Equipment['status'], number> = {
+  Active: 0,
+  Maintenance: 1,
+  Offline: 2
+}
+
+function equipmentKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
 function nodeToEquipment(node: GraphNode): Equipment {
   const fullText = `${node.label} ${node.data.full_text ?? ''}`.trim()
   return {
@@ -64,6 +80,37 @@ function documentEquipmentItems(documents: DocumentIntelligenceItem[]): Equipmen
   }
 
   return Array.from(items.values())
+}
+
+function mergeEquipmentItems(items: Equipment[]): Equipment[] {
+  const merged = new Map<string, Equipment>()
+
+  for (const item of items) {
+    const key = equipmentKey(item.name)
+    if (!key) continue
+    const existing = merged.get(key)
+
+    if (!existing) {
+      merged.set(key, item)
+      continue
+    }
+
+    merged.set(key, {
+      ...existing,
+      id: existing.id,
+      name: existing.name.length >= item.name.length ? existing.name : item.name,
+      status: statusRank[item.status] > statusRank[existing.status] ? item.status : existing.status,
+      risk: riskRank[item.risk] > riskRank[existing.risk] ? item.risk : existing.risk,
+      incidents: Math.min(99, existing.incidents + item.incidents),
+      lastInspection: existing.lastInspection.includes('uploaded documents') ? item.lastInspection : existing.lastInspection
+    })
+  }
+
+  return Array.from(merged.values()).sort((a, b) => (
+    riskRank[b.risk] - riskRank[a.risk] ||
+    b.incidents - a.incidents ||
+    a.name.localeCompare(b.name)
+  ))
 }
 
 function graphWithTimeout() {
@@ -136,9 +183,10 @@ export default function EquipmentPage() {
       .then(([graph, intelligence]) => {
         if (cancelled) return
         const equipmentNodes = graph.nodes.filter((node) => node.type === 'equipment')
-        const nextItems = equipmentNodes.length > 0
-          ? equipmentNodes.map(nodeToEquipment)
-          : documentEquipmentItems(intelligence.documents)
+        const nextItems = mergeEquipmentItems([
+          ...equipmentNodes.map(nodeToEquipment),
+          ...documentEquipmentItems(intelligence.documents)
+        ])
         setItems(nextItems)
         setSelectedEquipment((current) => {
           if (!current) return current
