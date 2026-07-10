@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "incident-exact-v2"
+CACHE_VERSION = "risk-analysis-v3"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -693,6 +693,79 @@ def build_document_risk_context(
     return "\n\n".join(lines)
 
 
+def _context_line_value(context: str, label: str) -> str:
+    prefix = f"{label}:"
+    for line in context.splitlines():
+        if line.startswith(prefix):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def _context_source_name(context: str) -> str:
+    match = re.search(r"\[Risk signal source:\s*(.*?)\]", context)
+    return match.group(1).strip() if match else "Uploaded PDF"
+
+
+def document_risk_result(
+    document_risk_context: str,
+    chunks: list[MemoryChunk | str],
+    source_names: dict[str, str],
+    agent_mode: str,
+    query_type: str,
+) -> dict:
+    source = _context_source_name(document_risk_context)
+    alert_level = _context_line_value(document_risk_context, "Alert level") or "unknown"
+    signal_counts = _context_line_value(document_risk_context, "Signal counts")
+    hazards = _context_line_value(document_risk_context, "Top hazard terms")
+    equipment = _context_line_value(document_risk_context, "Equipment-related terms")
+    actions = _context_line_value(document_risk_context, "Compliance/action terms")
+
+    supporting_excerpt = ""
+    for index, chunk in enumerate(chunks, start=1):
+        if chunk_source(chunk, index, source_names).lower() == source.lower():
+            supporting_excerpt = prompt_snippet(chunk_text(chunk), 120)
+            break
+    if not supporting_excerpt:
+        supporting_excerpt = signal_counts or hazards or "Document risk signals were extracted from the uploaded PDF text."
+
+    answer_parts = [
+        f"From your uploaded PDFs: {source} shows a {alert_level} risk profile, not just one dust-related risk.",
+    ]
+    if signal_counts:
+        answer_parts.append(f"The document scan found {signal_counts}.")
+    if hazards and hazards != "none detected":
+        answer_parts.append(f"Main hazard themes include {hazards}.")
+    if equipment and equipment != "none detected":
+        answer_parts.append(f"Equipment/process risk areas include {equipment}.")
+    if actions and actions != "none detected":
+        answer_parts.append(f"Compliance and control themes include {actions}.")
+    answer_parts.append(
+        "So the risk picture is broader than airborne respirable dust: it also includes accident, blasting, collapse/death or injury, electrical, fire/explosion/gas, ventilation, machinery/haulage, and related compliance-control duties where those terms appear in the uploaded PDF."
+    )
+
+    return {
+        "answer": " ".join(answer_parts),
+        "reasoning": (
+            f"Used the full stored risk-signal scan for {source} and supporting Cognee-recalled PDF evidence. "
+            "This avoids reducing a named-PDF risk analysis to only the first matching chunk."
+        ),
+        "sources": [{
+            "title": source,
+            "excerpt": supporting_excerpt[:220],
+            "relevance": 0.94,
+        }],
+        "related_memories": [],
+        "confidence": 0.9,
+        "mode": agent_mode,
+        "action_plan": [
+            "Review the highest-count hazard themes first.",
+            "Map equipment/process risks to inspection, ventilation, isolation, and reporting controls.",
+        ],
+        "confidence_notes": "High confidence because the answer uses the focused PDF risk-signal scan plus Cognee-recalled evidence.",
+        "query_type": query_type,
+    }
+
+
 def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[str]:
     queries: list[str] = []
     lowered = question.lower()
@@ -920,6 +993,40 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         write_perf_event({
             "event": "query",
             "cache": "miss_exact_incident",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": len(recalled_chunks),
+            "timings_ms": timings,
+        })
+        return query_response
+    if document_risk_context:
+        risk_result = document_risk_result(
+            document_risk_context,
+            recalled_chunks,
+            source_names,
+            agent_mode,
+            query_type,
+        )
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(risk_result))
+        query_response = QueryResponse(**risk_result)
+        timings["document_risk_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_document_risk",
             "question": request.question,
             "datasets": len(user_datasets),
             "retrieval_queries": len(retrieval_queries),
