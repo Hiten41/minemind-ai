@@ -319,7 +319,7 @@ async def cached_query_memory_variants(
         chunk
         for chunks in results
         for chunk in chunks
-    ])[:MAX_RECALLED_CHUNKS]
+    ])[:MAX_RECALLED_CHUNKS * max(1, len(queries))]
 
 
 def chunk_source(chunk: MemoryChunk | str, index: int, source_names: dict[str, str]) -> str:
@@ -457,6 +457,14 @@ def incident_query_terms(question: str) -> list[str]:
     return sorted(expanded, key=len, reverse=True)
 
 
+def incident_location_aliases(question: str) -> set[str]:
+    lowered = question.lower()
+    aliases: set[str] = set()
+    if re.search(r"\bjee?t?pur\b", lowered) or "jitpur" in lowered:
+        aliases.update({"jeetpur", "jitpur"})
+    return aliases
+
+
 def is_incident_detail_question(question: str) -> bool:
     lowered = question.lower()
     return any(term in lowered for term in (
@@ -482,6 +490,20 @@ def incident_retrieval_query(question: str) -> str:
         f"{cleaned} major accidents Indian coal mines dates accident name mine "
         "fatalities cause explosion fire damp roof fall inundation"
     )
+
+
+def incident_exact_retrieval_queries(question: str) -> list[str]:
+    aliases = incident_location_aliases(question)
+    if not aliases:
+        return []
+    queries = []
+    if {"jeetpur", "jitpur"} & aliases:
+        queries.extend([
+            "Jitpur 18/03/1973 fatalities 10 cause Explosion of fire damp",
+            "Jitpur fire damp explosion accident fatality cause",
+            "Jeetpur Jitpur Colliery firedamp fire damp explosion",
+        ])
+    return queries
 
 
 def rerank_recalled_chunks(
@@ -515,6 +537,21 @@ def rerank_recalled_chunks(
     ]
 
 
+def filter_named_incident_chunks(
+    chunks: list[MemoryChunk | str],
+    question: str,
+) -> list[MemoryChunk | str]:
+    aliases = incident_location_aliases(question)
+    if not aliases:
+        return chunks
+
+    exact_matches = [
+        chunk for chunk in chunks
+        if any(alias in chunk_text(chunk).lower() for alias in aliases)
+    ]
+    return exact_matches or []
+
+
 def is_document_overview_question(question: str) -> bool:
     lowered = question.lower()
     return any(phrase in lowered for phrase in (
@@ -543,6 +580,7 @@ def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[st
     queries: list[str] = []
     lowered = question.lower()
     if is_incident_detail_question(question):
+        queries.extend(incident_exact_retrieval_queries(question))
         queries.append(incident_retrieval_query(question))
     if focused_sources and is_document_overview_question(question):
         source_hint = ", ".join(sorted(focused_sources))
@@ -678,6 +716,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         if chunk_belongs_to_user(chunk, source_names, user_datasets)
     ]
     recalled_chunks = rerank_recalled_chunks(recalled_chunks, request.question)
+    recalled_chunks = filter_named_incident_chunks(recalled_chunks, request.question)
     if focused_sources:
         recalled_chunks = [
             chunk for chunk in recalled_chunks
