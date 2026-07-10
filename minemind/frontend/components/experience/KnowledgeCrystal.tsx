@@ -59,14 +59,19 @@ function MemoryNode({
   )
 }
 
-function MemoryCore({ queryPulse = 0, optimizePulse = 0 }: KnowledgeCrystalProps) {
+function MemoryCore({
+  queryPulse = 0,
+  optimizePulse = 0,
+  mobile = false
+}: KnowledgeCrystalProps & { mobile?: boolean }) {
   const groupRef = useRef<Group>(null)
   const [activeNodes, setActiveNodes] = useState<number[]>([])
   const [optimizing, setOptimizing] = useState(false)
   const nodes = useMemo<NodePoint[]>(() => {
-    return Array.from({ length: 18 }, (_, index) => {
+    const count = mobile ? 12 : 18
+    return Array.from({ length: count }, (_, index) => {
       const angle = index * 2.399963
-      const y = 1 - (index / 17) * 2
+      const y = 1 - (index / (count - 1)) * 2
       const radius = Math.sqrt(1 - y * y) * 1.75
       return {
         position: [
@@ -123,7 +128,7 @@ function MemoryCore({ queryPulse = 0, optimizePulse = 0 }: KnowledgeCrystalProps
     <group ref={groupRef}>
       <Float speed={1.2} rotationIntensity={0.2} floatIntensity={0.5}>
         <mesh>
-          <icosahedronGeometry args={[1.25, 2]} />
+          <icosahedronGeometry args={[1.25, mobile ? 1 : 2]} />
           <meshPhysicalMaterial
             color={optimizing ? '#f4d28e' : '#d7c59d'}
             roughness={0.18}
@@ -166,7 +171,7 @@ function MemoryCore({ queryPulse = 0, optimizePulse = 0 }: KnowledgeCrystalProps
       ))}
 
       <Sparkles
-        count={optimizing ? 120 : 75}
+        count={mobile ? (optimizing ? 54 : 32) : (optimizing ? 120 : 75)}
         scale={[5.2, 3.4, 5.2]}
         size={optimizing ? 1.9 : 1.2}
         speed={optimizing ? 0.72 : 0.22}
@@ -178,13 +183,50 @@ function MemoryCore({ queryPulse = 0, optimizePulse = 0 }: KnowledgeCrystalProps
 }
 
 export default function KnowledgeCrystal({ queryPulse = 0, optimizePulse = 0, onReady }: KnowledgeCrystalProps) {
+  const [isMobile, setIsMobile] = useState(false)
+  const [contextLost, setContextLost] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px), (pointer: coarse)')
+    const sync = () => setIsMobile(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+
+  if (contextLost) {
+    return (
+      <div className="pointer-events-none grid h-full w-full place-items-center">
+        <div className="relative h-[min(78vw,320px)] w-[min(78vw,320px)] rounded-full border border-[#d7b779]/15 bg-[radial-gradient(circle_at_45%_38%,rgba(215,183,121,0.22),rgba(255,255,255,0.035)_46%,transparent_72%)] shadow-[inset_0_0_90px_rgba(215,183,121,0.1),0_0_90px_rgba(215,183,121,0.08)]">
+          <div className="absolute inset-[18%] rounded-full border border-white/[0.08]" />
+          <div className="absolute inset-[31%] rounded-full border border-[#d7b779]/[0.16]" />
+          <span className="absolute left-[28%] top-[34%] h-2.5 w-2.5 rounded-full bg-[#f1d18d]" />
+          <span className="absolute right-[30%] top-[42%] h-2 w-2 rounded-full bg-white/70" />
+          <span className="absolute bottom-[30%] left-[42%] h-3 w-3 rounded-full bg-[#f1d18d]/80" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Canvas
-      dpr={[1, 1.75]}
-      gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+      dpr={isMobile ? [1, 1.15] : [1, 1.5]}
+      gl={{
+        alpha: true,
+        antialias: !isMobile,
+        failIfMajorPerformanceCaveat: false,
+        powerPreference: isMobile ? 'low-power' : 'high-performance',
+        stencil: false
+      }}
       className="h-full w-full pointer-events-none"
       style={{ pointerEvents: 'none' }}
-      onCreated={() => onReady?.()}
+      onCreated={({ gl }) => {
+        gl.domElement.addEventListener('webglcontextlost', (event) => {
+          event.preventDefault()
+          setContextLost(true)
+        })
+        onReady?.()
+      }}
     >
       <PerspectiveCamera makeDefault position={[0, 0.1, 6.1]} fov={38} />
       <ambientLight intensity={0.22} />
@@ -192,7 +234,7 @@ export default function KnowledgeCrystal({ queryPulse = 0, optimizePulse = 0, on
       <pointLight position={[-4, -1.6, -2]} intensity={1.1} color="#5e6874" />
       <spotLight position={[0, 5, 2]} angle={0.38} penumbra={0.7} intensity={1.2} color="#ffffff" />
       <fog attach="fog" args={['#000000', 5.8, 10]} />
-      <MemoryCore queryPulse={queryPulse} optimizePulse={optimizePulse} />
+      <MemoryCore queryPulse={queryPulse} optimizePulse={optimizePulse} mobile={isMobile} />
     </Canvas>
   )
 }
