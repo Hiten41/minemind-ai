@@ -8,6 +8,8 @@ from services.auth_service import init_auth_store
 from services.cognee_service import initialize_cognee
 from services.settings import CORS_LOCALHOST_REGEX, FRONTEND_ORIGINS, FRONTEND_ORIGIN_REGEX, IS_PRODUCTION
 
+APP_VERSION = "equipment-context-v8"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,4 +50,4 @@ app.include_router(analytics.router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "MineMind AI"}
+    return {"status": "ok", "service": "MineMind AI", "version": APP_VERSION}

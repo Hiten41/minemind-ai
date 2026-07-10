@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "equipment-context-v7"
+CACHE_VERSION = "equipment-context-v8"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -1062,6 +1062,42 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         return query_response
     timings["answer_cache_check_ms"] = perf_ms(stage_start)
 
+    if equipment_context:
+        stage_start = time.perf_counter()
+        equipment_result = equipment_context_result(
+            equipment_context,
+            [],
+            source_names,
+            agent_mode,
+            query_type,
+        )
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(equipment_result))
+        query_response = QueryResponse(**equipment_result)
+        timings["equipment_context_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_equipment_context_pre_retrieval",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": 0,
+            "timings_ms": timings,
+        })
+        return query_response
+
     async def timed_cognee_retrieval() -> list[MemoryChunk | str]:
         retrieval_start = time.perf_counter()
         chunks = await cached_query_memory_variants(user["id"], retrieval_queries, user_datasets)
@@ -1122,41 +1158,6 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         write_perf_event({
             "event": "query",
             "cache": "miss_document_risk",
-            "question": request.question,
-            "datasets": len(user_datasets),
-            "retrieval_queries": len(retrieval_queries),
-            "chunks": len(recalled_chunks),
-            "timings_ms": timings,
-        })
-        return query_response
-    if equipment_context:
-        stage_start = time.perf_counter()
-        equipment_result = equipment_context_result(
-            equipment_context,
-            recalled_chunks,
-            source_names,
-            agent_mode,
-            query_type,
-        )
-        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(equipment_result))
-        query_response = QueryResponse(**equipment_result)
-        timings["equipment_context_answer_ms"] = perf_ms(stage_start)
-        stage_start = time.perf_counter()
-        save_chat_message(user["id"], "user", request.question)
-        save_chat_message(
-            user["id"],
-            "assistant",
-            query_response.answer,
-            query_response.reasoning,
-            [source.model_dump() for source in query_response.sources],
-            [memory.model_dump() for memory in query_response.related_memories],
-            query_response.confidence,
-        )
-        timings["save_chat_ms"] = perf_ms(stage_start)
-        timings["total_ms"] = perf_ms(total_start)
-        write_perf_event({
-            "event": "query",
-            "cache": "miss_equipment_context",
             "question": request.question,
             "datasets": len(user_datasets),
             "retrieval_queries": len(retrieval_queries),
