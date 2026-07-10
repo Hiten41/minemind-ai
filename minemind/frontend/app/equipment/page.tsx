@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import EquipmentCard, { type Equipment } from '@/components/cards/EquipmentCard'
 import PremiumNav from '@/components/experience/PremiumNav'
 import { getDocumentIntelligence, getGraphData } from '@/lib/api'
-import type { DocumentIntelligence, DocumentIntelligenceItem, GraphNode } from '@/types'
+import type { DocumentIntelligenceItem, GraphNode } from '@/types'
 
 function deriveStatus(text: string): Equipment['status'] {
   const lowered = text.toLowerCase()
@@ -117,16 +117,7 @@ function graphWithTimeout() {
   return Promise.race([
     getGraphData(),
     new Promise<{ nodes: GraphNode[]; edges: [] }>((resolve) => {
-      window.setTimeout(() => resolve({ nodes: [], edges: [] }), 8000)
-    })
-  ])
-}
-
-function documentIntelligenceWithTimeout() {
-  return Promise.race([
-    getDocumentIntelligence(),
-    new Promise<DocumentIntelligence>((resolve) => {
-      window.setTimeout(() => resolve({ documents: [], top_entities: [] }), 8000)
+      window.setTimeout(() => resolve({ nodes: [], edges: [] }), 12000)
     })
   ])
 }
@@ -179,7 +170,7 @@ export default function EquipmentPage() {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([graphWithTimeout(), documentIntelligenceWithTimeout()])
+    Promise.all([graphWithTimeout(), getDocumentIntelligence()])
       .then(([graph, intelligence]) => {
         if (cancelled) return
         const equipmentNodes = graph.nodes.filter((node) => node.type === 'equipment')

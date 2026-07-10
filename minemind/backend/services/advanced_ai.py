@@ -335,12 +335,14 @@ def build_document_intelligence(user_id: str) -> dict[str, Any]:
     entity_counts: Counter[str] = Counter()
     for doc in list_documents(user_id):
         text = document_text(doc)
+        extracted = extract_document_signals(text) if text.strip() else {}
+        stored = doc.get("intelligence_signals") or {}
+        hazards = sorted(set(extracted.get("hazards") or []) | set(stored.get("hazards") or []))
+        actions = sorted(set(extracted.get("actions") or []) | set(stored.get("actions") or []))
+        equipment = sorted(set(extracted.get("equipment") or []) | set(stored.get("equipment") or []))
         lowered = text.lower()
-        hazards = sorted(term for term in MINE_TERMS["hazards"] if term in lowered)
-        actions = sorted(term for term in MINE_TERMS["actions"] if term in lowered)
-        equipment = sorted(term for term in MINE_TERMS["equipment"] if term in lowered)
         for term in hazards + actions + equipment:
-            entity_counts[term] += lowered.count(term)
+            entity_counts[term] += max(1, lowered.count(term))
         documents.append({
             "id": doc.get("id"),
             "name": doc.get("name"),
@@ -360,6 +362,15 @@ def build_document_intelligence(user_id: str) -> dict[str, Any]:
             {"name": name, "count": count}
             for name, count in entity_counts.most_common(15)
         ],
+    }
+
+
+def extract_document_signals(text: str) -> dict[str, list[str]]:
+    lowered = text.lower()
+    return {
+        "hazards": sorted(term for term in MINE_TERMS["hazards"] if term in lowered)[:12],
+        "actions": sorted(term for term in MINE_TERMS["actions"] if term in lowered)[:12],
+        "equipment": sorted(term for term in MINE_TERMS["equipment"] if term in lowered)[:12],
     }
 
 

@@ -87,6 +87,7 @@ def init_auth_store() -> None:
                 file_path TEXT,
                 risk_signals TEXT NOT NULL DEFAULT '{}',
                 risk_level TEXT NOT NULL DEFAULT 'none',
+                intelligence_signals TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
             """
@@ -129,6 +130,7 @@ def init_auth_store() -> None:
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_signals TEXT NOT NULL DEFAULT '{}'")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'none'")
+        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS intelligence_signals TEXT NOT NULL DEFAULT '{}'")
 
 
 def _hash_password(password: str, salt: str | None = None) -> str:
@@ -248,8 +250,8 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
         conn.execute(
             """
                 INSERT INTO documents
-                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc["id"],
@@ -264,6 +266,7 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
                 doc.get("file_path"),
                 json.dumps(doc.get("risk_signals") or {}),
                 doc.get("risk_level", "none"),
+                json.dumps(doc.get("intelligence_signals") or {}),
             ),
         )
 
@@ -289,7 +292,7 @@ def list_documents(user_id: str) -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level
+            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals
             FROM documents
             WHERE user_id = %s
             ORDER BY uploaded_at DESC
@@ -321,7 +324,7 @@ def list_documents_page(
         ).fetchone()["count"]
         rows = conn.execute(
             f"""
-            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level
+            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals
             FROM documents
             WHERE {where_clause}
             ORDER BY uploaded_at DESC
@@ -353,6 +356,10 @@ def _document_row(row: dict[str, Any]) -> dict[str, Any]:
         item["risk_signals"] = json.loads(item.get("risk_signals") or "{}")
     except (TypeError, json.JSONDecodeError):
         item["risk_signals"] = {}
+    try:
+        item["intelligence_signals"] = json.loads(item.get("intelligence_signals") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        item["intelligence_signals"] = {}
     item["risk_level"] = item.get("risk_level") or "none"
     return item
 

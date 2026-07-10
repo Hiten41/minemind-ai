@@ -18,7 +18,7 @@ from services.auth_service import (
     update_document_ingest_status,
 )
 from services.cognee_service import ingest_document
-from services.advanced_ai import scan_text_for_risk_alert
+from services.advanced_ai import extract_document_signals, scan_text_for_risk_alert
 from services.document_search import estimate_node_count, repair_document_node_counts, store_document_text
 from services.parser import parse_file
 from services.settings import STORAGE_ROOT
@@ -84,6 +84,7 @@ async def upload_document(
     file_path = store_original_file(user["id"], doc_id, safe_name, content)
     node_count = estimate_node_count(text)
     risk_alert = scan_text_for_risk_alert(text)
+    intelligence_signals = extract_document_signals(text)
     status = "stored"
 
     if os.path.exists(tmp_path):
@@ -101,6 +102,7 @@ async def upload_document(
         "file_path": file_path,
         "risk_signals": risk_alert["risk_signals"],
         "risk_level": risk_alert["risk_level"],
+        "intelligence_signals": intelligence_signals,
     }
     save_document(user["id"], doc)
     background_tasks.add_task(
