@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import Depends, Header, HTTPException
 import psycopg2
+from psycopg2 import Binary
 from psycopg2 import errors
 from psycopg2.extras import RealDictCursor
 
@@ -88,6 +89,8 @@ def init_auth_store() -> None:
                 risk_signals TEXT NOT NULL DEFAULT '{}',
                 risk_level TEXT NOT NULL DEFAULT 'none',
                 intelligence_signals TEXT NOT NULL DEFAULT '{}',
+                file_content BYTEA,
+                file_mime_type TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
             """
@@ -131,6 +134,8 @@ def init_auth_store() -> None:
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_signals TEXT NOT NULL DEFAULT '{}'")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'none'")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS intelligence_signals TEXT NOT NULL DEFAULT '{}'")
+        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_content BYTEA")
+        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_mime_type TEXT")
 
 
 def _hash_password(password: str, salt: str | None = None) -> str:
@@ -250,8 +255,8 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
         conn.execute(
             """
                 INSERT INTO documents
-                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals, file_content, file_mime_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc["id"],
@@ -267,6 +272,8 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
                 json.dumps(doc.get("risk_signals") or {}),
                 doc.get("risk_level", "none"),
                 json.dumps(doc.get("intelligence_signals") or {}),
+                Binary(doc["file_content"]) if doc.get("file_content") else None,
+                doc.get("file_mime_type"),
             ),
         )
 
@@ -360,6 +367,19 @@ def get_document_for_user(user_id: str, dataset_name: str) -> dict[str, Any] | N
             (user_id, dataset_name),
         ).fetchone()
     return _document_row(row) if row else None
+
+
+def get_document_file_for_user(user_id: str, doc_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, name, file_path, file_content, file_mime_type
+            FROM documents
+            WHERE user_id = %s AND id = %s
+            """,
+            (user_id, doc_id),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def _document_row(row: dict[str, Any]) -> dict[str, Any]:

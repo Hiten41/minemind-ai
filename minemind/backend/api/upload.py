@@ -7,11 +7,12 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from models.schemas import UploadResponse
 from services.auth_service import (
     current_user,
+    get_document_file_for_user,
     list_documents,
     list_documents_page,
     save_document,
@@ -91,6 +92,7 @@ async def upload_document(
     dataset_name = f"user_{user['id'][:8]}_{detected_type}_{doc_id[:8]}"
     text_path = store_document_text(user["id"], doc_id, text)
     file_path = store_original_file(user["id"], doc_id, safe_name, content)
+    file_mime_type = mimetypes.guess_type(safe_name)[0] or file.content_type or "application/octet-stream"
     node_count = estimate_node_count(text)
     risk_alert = scan_text_for_risk_alert(text)
     intelligence_signals = extract_document_signals(text)
@@ -109,6 +111,8 @@ async def upload_document(
         "dataset_name": dataset_name,
         "text_path": text_path,
         "file_path": file_path,
+        "file_content": content,
+        "file_mime_type": file_mime_type,
         "risk_signals": risk_alert["risk_signals"],
         "risk_level": risk_alert["risk_level"],
         "intelligence_signals": intelligence_signals,
@@ -149,12 +153,20 @@ async def get_document_file(
     doc_id: str,
     user: dict[str, str] = Depends(current_user),
 ):
-    doc = next(
-        (item for item in list_documents(user["id"]) if str(item["id"]) == doc_id),
-        None,
-    )
+    doc = get_document_file_for_user(user["id"], doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    file_content = doc.get("file_content")
+    if file_content:
+        content = bytes(file_content)
+        media_type = str(doc.get("file_mime_type") or "application/pdf")
+        filename = str(doc.get("name") or "document.pdf")
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
 
     file_path = doc.get("file_path")
     if not file_path:
