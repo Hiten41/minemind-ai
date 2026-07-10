@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "risk-analysis-v4"
+CACHE_VERSION = "risk-analysis-v5"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -742,7 +742,7 @@ def document_risk_result(
         supporting_excerpt = signal_counts or hazards or "Document risk signals were extracted from the uploaded PDF text."
 
     answer_parts = [
-        f"From your uploaded PDFs: {source} shows a {alert_level} risk profile, not just one dust-related risk.",
+        f"From your uploaded PDFs: {source} shows a {alert_level} risk profile across multiple safety categories.",
     ]
     if signal_counts:
         answer_parts.append(f"The document scan found {signal_counts}.")
@@ -753,7 +753,7 @@ def document_risk_result(
     if actions and actions != "none detected":
         answer_parts.append(f"Compliance and control themes include {actions}.")
     answer_parts.append(
-        "So the risk picture is broader than airborne respirable dust: it also includes accident, blasting, collapse/death or injury, electrical, fire/explosion/gas, ventilation, machinery/haulage, and related compliance-control duties where those terms appear in the uploaded PDF."
+        "Overall, the main risk areas are accident and injury potential, blasting and explosive hazards, collapse or roof-fall style hazards, electrical hazards, fire/explosion/gas hazards, ventilation hazards, machinery and haulage hazards, and the compliance-control duties linked to those risks."
     )
 
     return {
