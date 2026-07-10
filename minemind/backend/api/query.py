@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "equipment-context-v8"
+CACHE_VERSION = "equipment-context-v9"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -786,6 +786,7 @@ def extract_doc_signals_from_text(text: str) -> dict[str, list[str]]:
 
 
 def equipment_context_result(
+    question: str,
     equipment_context: str,
     chunks: list[MemoryChunk | str],
     source_names: dict[str, str],
@@ -814,25 +815,36 @@ def equipment_context_result(
 
     equipment_label = ", ".join(name.title() for name in equipment_names) or "This equipment"
     source_label = ", ".join(sources) or "your uploaded documents"
+    lowered_question = question.lower()
+    explicitly_maintenance_history = any(phrase in lowered_question for phrase in (
+        "maintenance history",
+        "service history",
+        "repair history",
+        "maintenance log",
+        "service log",
+        "service record",
+        "maintenance record",
+        "specific service dates",
+    ))
     answer_parts = [
         f"From your uploaded PDFs: {equipment_label} is mentioned in {source_label}.",
-        "I did not find a dedicated maintenance-history log for it, so I should not claim specific service dates or repairs.",
     ]
+    if explicitly_maintenance_history:
+        answer_parts.append("I did not find a dedicated maintenance-history log for it, so I should not claim specific service dates or repairs.")
     if risk_matches:
         answer_parts.append(f"The related document risk scan shows {risk_matches[0]}.")
     if hazard_matches and hazard_matches[0] != "none detected":
         answer_parts.append(f"Associated safety concern themes include {hazard_matches[0]}.")
     if action_matches and action_matches[0] != "none detected":
         answer_parts.append(f"Relevant duties/control themes include {action_matches[0]}.")
-    answer_parts.append(
-        "Treat this as an equipment mention plus surrounding safety context, not a confirmed maintenance-history record."
-    )
+    if explicitly_maintenance_history:
+        answer_parts.append("Treat this as an equipment mention plus surrounding safety context, not a confirmed maintenance-history record.")
 
     return {
         "answer": " ".join(answer_parts),
         "reasoning": (
             "The equipment page selected an equipment signal extracted from uploaded document intelligence. "
-            "The answer separates confirmed mentions from missing maintenance-history records."
+            "The answer summarizes confirmed equipment mentions and associated safety/control context."
         ),
         "sources": [{
             "title": sources[0] if sources else "Uploaded document",
@@ -844,9 +856,9 @@ def equipment_context_result(
         "mode": agent_mode,
         "action_plan": [
             "Open the cited source and inspect the equipment mention.",
-            "Check whether a separate maintenance report exists before treating this as maintenance history.",
+            "Review the associated safety and control themes before deciding whether a separate maintenance report is needed.",
         ],
-        "confidence_notes": "Moderate confidence: the equipment mention is confirmed, but no dedicated maintenance-history log was found.",
+        "confidence_notes": "Moderate confidence: the equipment mention is confirmed from document intelligence and summarized with associated risk/control themes.",
         "query_type": query_type,
     }
 
@@ -1065,6 +1077,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     if equipment_context:
         stage_start = time.perf_counter()
         equipment_result = equipment_context_result(
+            request.question,
             equipment_context,
             [],
             source_names,
