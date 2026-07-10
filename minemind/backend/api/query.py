@@ -57,7 +57,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 650
 MAX_CONTEXT_CHARS = 2800
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "risk-analysis-v3"
+CACHE_VERSION = "risk-analysis-v4"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -659,17 +659,30 @@ def build_document_risk_context(
     lines: list[str] = []
     for doc in focused_docs[:3]:
         text = document_text(doc)
-        if not text.strip():
-            continue
-        alert = scan_text_for_risk_alert(text)
+        alert = scan_text_for_risk_alert(text) if text.strip() else {}
+        stored_signals = doc.get("risk_signals") or {}
+        stored_intelligence = doc.get("intelligence_signals") or {}
         hazard_counts = counted_terms(text, MINE_TERMS["hazards"])
         equipment_counts = counted_terms(text, MINE_TERMS["equipment"], limit=8)
         action_counts = counted_terms(text, MINE_TERMS["actions"], limit=8)
-        risk_signals = alert.get("risk_signals") or {}
+        if not hazard_counts:
+            hazard_counts = [(term, 1) for term in (stored_intelligence.get("hazards") or [])[:12]]
+        if not equipment_counts:
+            equipment_counts = [(term, 1) for term in (stored_intelligence.get("equipment") or [])[:8]]
+        if not action_counts:
+            action_counts = [(term, 1) for term in (stored_intelligence.get("actions") or [])[:8]]
+        risk_signals = {
+            "violations": max(int((alert.get("risk_signals") or {}).get("violations", 0) or 0), int(stored_signals.get("violations", 0) or 0)),
+            "equipment": max(int((alert.get("risk_signals") or {}).get("equipment", 0) or 0), int(stored_signals.get("equipment", 0) or 0)),
+            "hazards": max(int((alert.get("risk_signals") or {}).get("hazards", 0) or 0), int(stored_signals.get("hazards", 0) or 0)),
+        }
+        alert_level = alert.get("risk_level") or doc.get("risk_level") or "unknown"
+        if not any(risk_signals.values()) and not (hazard_counts or equipment_counts or action_counts):
+            continue
         lines.append(
             "\n".join([
                 f"[Risk signal source: {doc.get('name')}]",
-                f"Alert level: {alert.get('risk_level', 'unknown')}",
+                f"Alert level: {alert_level}",
                 (
                     "Signal counts: "
                     f"{risk_signals.get('violations', 0)} safety violations, "
@@ -925,6 +938,41 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
             if chunk_source(chunk, 1, source_names).lower() in focused_sources
         ]
     timings["retrieval_filter_ms"] = perf_ms(stage_start)
+    if document_risk_context:
+        stage_start = time.perf_counter()
+        risk_result = document_risk_result(
+            document_risk_context,
+            recalled_chunks,
+            source_names,
+            agent_mode,
+            query_type,
+        )
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(risk_result))
+        query_response = QueryResponse(**risk_result)
+        timings["document_risk_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_document_risk",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": len(recalled_chunks),
+            "timings_ms": timings,
+        })
+        return query_response
     if not recalled_chunks:
         query_response = QueryResponse(
             answer=NO_DOCUMENT_MATCH_MESSAGE,
@@ -993,40 +1041,6 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         write_perf_event({
             "event": "query",
             "cache": "miss_exact_incident",
-            "question": request.question,
-            "datasets": len(user_datasets),
-            "retrieval_queries": len(retrieval_queries),
-            "chunks": len(recalled_chunks),
-            "timings_ms": timings,
-        })
-        return query_response
-    if document_risk_context:
-        risk_result = document_risk_result(
-            document_risk_context,
-            recalled_chunks,
-            source_names,
-            agent_mode,
-            query_type,
-        )
-        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(risk_result))
-        query_response = QueryResponse(**risk_result)
-        timings["document_risk_answer_ms"] = perf_ms(stage_start)
-        stage_start = time.perf_counter()
-        save_chat_message(user["id"], "user", request.question)
-        save_chat_message(
-            user["id"],
-            "assistant",
-            query_response.answer,
-            query_response.reasoning,
-            [source.model_dump() for source in query_response.sources],
-            [memory.model_dump() for memory in query_response.related_memories],
-            query_response.confidence,
-        )
-        timings["save_chat_ms"] = perf_ms(stage_start)
-        timings["total_ms"] = perf_ms(total_start)
-        write_perf_event({
-            "event": "query",
-            "cache": "miss_document_risk",
             "question": request.question,
             "datasets": len(user_datasets),
             "retrieval_queries": len(retrieval_queries),
