@@ -42,6 +42,20 @@ HAZARD_KEYWORDS = (
     "blasting",
 )
 
+INCIDENT_MARKERS = {
+    "accident",
+    "fatal",
+    "fatality",
+    "fatalities",
+    "explosion",
+    "inundation",
+    "roof fall",
+    "firedamp",
+    "fire damp",
+    "gas explosion",
+    "colliery",
+}
+
 MINE_TERMS = {
     "hazards": {
         "roof fall", "fall of roof", "inundation", "explosion", "fire", "gas",
@@ -142,6 +156,37 @@ def document_text(doc: dict[str, Any]) -> str:
         return path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return ""
+
+
+def classify_document_type(doc: dict[str, Any], text: str | None = None) -> str:
+    stored_type = str(doc.get("type") or "regulation").lower()
+    if stored_type == "incident":
+        return stored_type
+
+    name = str(doc.get("name") or "").lower()
+    readable_text = text if text is not None else document_text(doc)
+    sample = readable_text.lower()[:50000]
+
+    if "accident" in name or "incident" in name:
+        return "incident"
+    accident_table_rows = len(
+        re.findall(
+            r"\|\s*(?:fire|gas|coal|roof|inundation|blasting|methane|explosion).{0,100}\|\s*\d+\s*fatal",
+            sample,
+        )
+    )
+    if accident_table_rows >= 2:
+        return "incident"
+    dated_entries = len(re.findall(r"\b\d{2}/\d{2}/\d{4}\b", sample))
+    marker_count = sum(marker in sample for marker in INCIDENT_MARKERS)
+    if dated_entries >= 5 and marker_count >= 4:
+        return "incident"
+
+    equipment_signals = extract_document_signals(readable_text).get("equipment", [])
+    if stored_type == "regulation" and len(equipment_signals) >= 8 and not any(term in sample for term in ("regulation", "rules", "act")):
+        return "manual"
+
+    return stored_type
 
 
 def detect_agent_mode(question: str) -> str:

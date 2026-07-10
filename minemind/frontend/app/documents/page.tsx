@@ -167,8 +167,15 @@ export default function DocumentsPage() {
     }, 180)
     try {
       const doc = await uploadDocument(selectedFile, selectedType)
-      setDocuments((current) => [doc, ...current])
-      setTotalDocuments((current) => current + 1)
+      if (doc.type === selectedType) {
+        setDocuments((current) => [doc, ...current])
+        setTotalDocuments((current) => current + 1)
+      } else {
+        setSelectedType(doc.type)
+        setDocuments([doc])
+        setTotalDocuments(1)
+        setHasMoreDocuments(false)
+      }
       setToast('Uploaded. MineMind will continue indexing it in the background.')
       setSelectedFile(null)
       setUploadProgress(100)

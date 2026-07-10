@@ -288,6 +288,18 @@ def update_document_ingest_status(
         )
 
 
+def update_document_type(user_id: str, doc_id: str, doc_type: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE documents
+            SET type = %s
+            WHERE user_id = %s AND id = %s
+            """,
+            (doc_type, user_id, doc_id),
+        )
+
+
 def list_documents(user_id: str) -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(

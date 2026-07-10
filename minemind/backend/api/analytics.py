@@ -1,48 +1,17 @@
 from datetime import datetime
-import re
 
 from fastapi import APIRouter, Depends
 
 from models.schemas import AnalyticsData
 from services.auth_service import current_user, list_documents
-from services.advanced_ai import build_document_intelligence, document_text, risk_signals
+from services.advanced_ai import build_document_intelligence, classify_document_type, document_text, risk_signals
 from services.document_search import repair_document_node_counts
 
 router = APIRouter()
 
 
-INCIDENT_MARKERS = {
-    "accident",
-    "fatal",
-    "fatality",
-    "fatalities",
-    "explosion",
-    "inundation",
-    "roof fall",
-    "firedamp",
-    "fire damp",
-    "gas explosion",
-    "colliery",
-}
-
-
 def derived_document_type(doc: dict) -> str:
-    stored_type = str(doc.get("type") or "regulation").lower()
-    if stored_type == "incident":
-        return stored_type
-
-    name = str(doc.get("name") or "").lower()
-    text = document_text(doc).lower()
-    sample = text[:50000]
-
-    if "accident" in name or "incident" in name:
-        return "incident"
-    if len(re.findall(r"\|\s*(?:fire|gas|coal|roof|inundation|blasting|methane).{0,80}\|\s*\d+\s*fatal", sample)) >= 2:
-        return "incident"
-    if len(re.findall(r"\b\d{2}/\d{2}/\d{4}\b", sample)) >= 5 and sum(marker in sample for marker in INCIDENT_MARKERS) >= 4:
-        return "incident"
-
-    return stored_type
+    return classify_document_type(doc)
 
 
 def has_equipment_signals(doc: dict, intelligence_doc: dict | None) -> bool:
