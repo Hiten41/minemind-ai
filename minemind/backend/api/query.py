@@ -11,11 +11,14 @@ from dotenv import load_dotenv
 
 from models.schemas import QueryRequest, QueryResponse
 from services.advanced_ai import (
+    MINE_TERMS,
     action_plan_for_mode,
     citations_from_chunks,
     confidence_notes,
     detect_agent_mode,
     detect_user_role,
+    document_text,
+    scan_text_for_risk_alert,
 )
 from services.auth_service import (
     current_user,
@@ -612,6 +615,84 @@ def is_document_overview_question(question: str) -> bool:
     ))
 
 
+def is_risk_analysis_question(question: str, agent_mode: str) -> bool:
+    lowered = question.lower()
+    if agent_mode == "risk_audit":
+        return True
+    return any(term in lowered for term in (
+        "analyze risk",
+        "analyse risk",
+        "risk in",
+        "risks in",
+        "hazard in",
+        "hazards in",
+        "danger in",
+        "dangers in",
+        "safety risk",
+        "risk assessment",
+    ))
+
+
+def counted_terms(text: str, terms: set[str], limit: int = 12) -> list[tuple[str, int]]:
+    lowered = text.lower()
+    counts = [
+        (term, lowered.count(term))
+        for term in terms
+        if lowered.count(term)
+    ]
+    return sorted(counts, key=lambda item: (item[1], item[0]), reverse=True)[:limit]
+
+
+def build_document_risk_context(
+    question: str,
+    docs: list[dict],
+    focused_sources: set[str],
+    agent_mode: str,
+) -> str:
+    if not focused_sources or not is_risk_analysis_question(question, agent_mode):
+        return ""
+
+    focused_docs = [
+        doc for doc in docs
+        if str(doc.get("name", "")).lower() in focused_sources
+    ]
+    lines: list[str] = []
+    for doc in focused_docs[:3]:
+        text = document_text(doc)
+        if not text.strip():
+            continue
+        alert = scan_text_for_risk_alert(text)
+        hazard_counts = counted_terms(text, MINE_TERMS["hazards"])
+        equipment_counts = counted_terms(text, MINE_TERMS["equipment"], limit=8)
+        action_counts = counted_terms(text, MINE_TERMS["actions"], limit=8)
+        risk_signals = alert.get("risk_signals") or {}
+        lines.append(
+            "\n".join([
+                f"[Risk signal source: {doc.get('name')}]",
+                f"Alert level: {alert.get('risk_level', 'unknown')}",
+                (
+                    "Signal counts: "
+                    f"{risk_signals.get('violations', 0)} safety violations, "
+                    f"{risk_signals.get('equipment', 0)} equipment issues, "
+                    f"{risk_signals.get('hazards', 0)} hazards"
+                ),
+                "Top hazard terms: " + (
+                    ", ".join(f"{term} ({count})" for term, count in hazard_counts)
+                    if hazard_counts else "none detected"
+                ),
+                "Equipment-related terms: " + (
+                    ", ".join(f"{term} ({count})" for term, count in equipment_counts)
+                    if equipment_counts else "none detected"
+                ),
+                "Compliance/action terms: " + (
+                    ", ".join(f"{term} ({count})" for term, count in action_counts)
+                    if action_counts else "none detected"
+                ),
+            ])
+        )
+    return "\n\n".join(lines)
+
+
 def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[str]:
     queries: list[str] = []
     lowered = question.lower()
@@ -627,6 +708,11 @@ def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[st
         source_hint = ", ".join(sorted(focused_sources))
         queries.append(
             f"{question} {source_hint} accident accidents dangerous occurrence injury fatality notice report regulation"
+        )
+    if focused_sources and any(term in lowered for term in ("risk", "risks", "hazard", "hazards", "danger", "unsafe")):
+        source_hint = ", ".join(sorted(focused_sources))
+        queries.append(
+            f"{source_hint} risk hazards unsafe accident fire gas methane dust ventilation blasting machinery electrical injury death safety violation equipment"
         )
     if has_unmatched_pdf_reference(question, focused_sources):
         cleaned_question = remove_referenced_pdf_names(question)
@@ -691,6 +777,12 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     else:
         user_datasets = user_dataset_names(user["id"])[:40]
     retrieval_queries = build_retrieval_queries(request.question, focused_sources)
+    document_risk_context = build_document_risk_context(
+        request.question,
+        docs,
+        focused_sources,
+        agent_mode,
+    )
     timings["routing_and_dataset_scope_ms"] = perf_ms(stage_start)
 
     stage_start = time.perf_counter()
@@ -858,6 +950,15 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
             "- Summarize the recalled context as a compact list of actual items shown, such as the regulation name, legal basis, chapter/section names, scope/application, definitions, duties, tables, or safety topics.\n"
             "- If only the start of the PDF was recalled, say that the recalled portion shows those items, not the whole PDF.\n"
         )
+    risk_instruction = ""
+    if document_risk_context:
+        risk_instruction = (
+            "DOCUMENT RISK ANALYSIS MODE:\n"
+            "- The user is asking for risks in a named uploaded PDF.\n"
+            "- Use the document risk signals as a required summary of the whole focused PDF, then support the explanation with Cognee PDF context when available.\n"
+            "- Do not reduce the answer to only one recalled chunk if the risk signal summary shows broader hazards.\n"
+            "- Mention the main categories and counts from the risk signal summary, then explain the most important risk themes in plain language.\n"
+        )
     timings["context_and_prompt_assembly_ms"] = perf_ms(stage_start)
 
     prompt = f"""You are MineMind AI, a mining safety assistant.
@@ -869,9 +970,13 @@ If context is insufficient, return the uploaded-document not-found message.
 Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 
 {overview_instruction}
+{risk_instruction}
 
 COGNEE PDF CONTEXT:
 {context}
+
+DOCUMENT RISK SIGNALS:
+{document_risk_context or "No focused document risk summary was needed for this question."}
 
 RECENT CHAT:
 {history}
