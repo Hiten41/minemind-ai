@@ -109,8 +109,8 @@ function ChatContent() {
     const lowered = input.toLowerCase()
     const hasTemporalHint = temporalInputKeywords.some((keyword) => lowered.includes(keyword))
     return hasTemporalHint
-      ? 'Temporal query detected - searching memory timeline...'
-      : 'Ask about regulations, manuals, incidents, or maintenance...'
+      ? 'Searching memory timeline...'
+      : 'Ask MineMind about your documents...'
   }, [input])
 
   useEffect(() => {
@@ -197,7 +197,7 @@ function ChatContent() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_24%,rgba(215,183,121,0.12),transparent_28%),radial-gradient(circle_at_84%_58%,rgba(96,119,139,0.16),transparent_30%)]" />
       <div className="pointer-events-none absolute left-1/2 top-24 h-px w-[78vw] -translate-x-1/2 bg-gradient-to-r from-transparent via-white/18 to-transparent" />
 
-      <section className="relative z-10 mx-auto grid h-[100dvh] max-w-7xl grid-cols-1 gap-4 overflow-hidden px-3 pb-3 pt-32 sm:px-5 sm:pb-4 sm:pt-28 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5 lg:px-6 lg:pb-6 lg:pt-24">
+      <section className="relative z-10 mx-auto grid h-[100dvh] max-w-7xl grid-cols-1 gap-4 overflow-hidden px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-32 sm:px-5 sm:pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pt-28 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5 lg:px-6 lg:pb-6 lg:pt-24">
         <div className="glass-depth flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] sm:rounded-[32px]">
           <header className="border-b border-white/10 px-4 py-3 sm:px-6 sm:py-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -267,9 +267,9 @@ function ChatContent() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
-                className="mt-5 flex"
+                className="mt-5 flex min-w-0"
               >
-                <div className="glass-depth-subtle flex items-center gap-3 rounded-2xl px-4 py-3">
+                <div className="glass-depth-subtle flex min-w-0 items-center gap-3 rounded-2xl px-4 py-3">
                   <span className="text-sm text-white/56">Reading memory</span>
                   <span className="flex gap-1">
                     {[0, 1, 2].map((dot) => (

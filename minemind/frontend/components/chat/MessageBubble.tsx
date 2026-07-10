@@ -73,9 +73,9 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
             <button
               key={`${source.title}-${source.excerpt}`}
               type="button"
-              className="block w-full rounded-2xl border border-white/10 bg-black/18 p-3 text-left text-sm transition hover:border-[#d7b779]/35"
+              className="block min-h-11 w-full rounded-2xl border border-white/10 bg-black/18 p-3 text-left text-sm transition hover:border-[#d7b779]/35"
             >
-              <span className="font-semibold text-white/78">{evidenceTitle(source.title, index)}</span>
+              <span className="block break-words font-semibold text-white/78">{evidenceTitle(source.title, index)}</span>
               <span className="mt-1 block break-words text-white/42">{source.excerpt}</span>
             </button>
           ))}
@@ -84,7 +84,7 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
       {message.related_memories && message.related_memories.length > 0 ? (
         <div className="mt-4 flex flex-wrap gap-2">
           {message.related_memories.map((memory, index) => (
-            <span key={`${memory.title}-${memory.summary}-${index}`} className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs text-white/56">
+            <span key={`${memory.title}-${memory.summary}-${index}`} className="max-w-full break-words rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs text-white/56">
               {evidenceTitle(memory.title, index)}
             </span>
           ))}

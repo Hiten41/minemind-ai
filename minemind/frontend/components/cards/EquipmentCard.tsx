@@ -38,7 +38,7 @@ export default function EquipmentCard({
     <button
       type="button"
       onClick={onClick}
-      className={`min-w-0 rounded-xl border bg-card p-5 text-left transition hover:border-white/40 sm:p-6 ${
+      className={`min-h-11 min-w-0 rounded-xl border bg-card p-5 text-left transition hover:border-white/40 sm:p-6 ${
         isSelected ? 'border-white/60' : 'border-card-border'
       }`}
     >
@@ -62,7 +62,7 @@ export default function EquipmentCard({
         </div>
         <div className="min-[420px]:col-span-2">
           <p className="text-[#888888]">Inspection</p>
-          <p className="truncate font-semibold text-white" title={lastInspection}>{lastInspection}</p>
+          <p className="break-words font-semibold text-white" title={lastInspection}>{lastInspection}</p>
         </div>
       </div>
     </button>

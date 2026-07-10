@@ -273,7 +273,7 @@ export default function DashboardPage() {
                   type="button"
                   onPointerDown={() => router.push(`/chat?q=${encodeURIComponent(`Analyze the risks in ${alert.name}`)}`)}
                   onClick={() => router.push(`/chat?q=${encodeURIComponent(`Analyze the risks in ${alert.name}`)}`)}
-                  className="mt-3 flex items-center gap-1 text-xs font-medium text-white/72 transition hover:text-white"
+                  className="mt-3 flex min-h-11 items-center gap-1 text-xs font-medium text-white/72 transition hover:text-white"
                 >
                   Ask MineMind about this
                   <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.7} />
@@ -318,7 +318,7 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
               transition={{ delay: 0.65 }}
-              className="glass-depth-subtle inline-flex items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
+              className="glass-depth-subtle inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
             >
               <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
               Re-index Knowledge Base
@@ -376,7 +376,7 @@ export default function DashboardPage() {
           initial={{ x: '-50%', opacity: 0, y: 28, scale: 0.98 }}
           animate={{ x: '-50%', opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 88, damping: 20, delay: 0.28 }}
-          className="glass-depth amber-aura fixed bottom-4 left-1/2 z-40 w-[min(760px,calc(100vw-1.5rem))] rounded-[24px] p-2 sm:bottom-5 xl:bottom-[8vh] xl:rounded-[28px]"
+          className="glass-depth amber-aura fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-40 w-[min(760px,calc(100vw-1.5rem))] rounded-[24px] p-2 sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] xl:bottom-[8vh] xl:rounded-[28px]"
         >
           <form
             className="flex items-center gap-2 sm:gap-3"
@@ -391,7 +391,7 @@ export default function DashboardPage() {
             <input
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask MineMind about incidents, regulations, or equipment history"
+              placeholder="Ask MineMind about your documents..."
               className="soft-focus-ring h-12 min-w-0 flex-1 bg-transparent px-2 text-sm text-white placeholder:text-white/34 sm:h-14 sm:px-0 sm:text-[15px]"
             />
             <button

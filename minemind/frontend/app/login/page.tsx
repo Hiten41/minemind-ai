@@ -71,7 +71,7 @@ export default function LoginPage() {
               type="button"
               onPointerDown={() => setMode(item)}
               onClick={() => setMode(item)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition active:scale-95 ${
+              className={`h-12 rounded-full px-4 py-2 text-sm font-medium transition active:scale-95 ${
                 mode === item
                   ? 'bg-white text-black'
                   : 'text-white/48 hover:text-white'
@@ -130,7 +130,7 @@ function Field({
   type?: string
 }) {
   return (
-    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-white/70 transition focus-within:border-[#d7b779]/40">
+    <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-2 text-white/70 transition focus-within:border-[#d7b779]/40">
       <Icon className="h-4 w-4 shrink-0 text-[#d7b779]" strokeWidth={1.5} />
       <input
         required
@@ -138,7 +138,7 @@ function Field({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
+        className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
       />
     </label>
   )

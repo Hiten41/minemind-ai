@@ -40,7 +40,7 @@ export default function PremiumNav() {
         initial={{ x: '-50%', y: -18, opacity: 0 }}
         animate={{ x: '-50%', y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 90, damping: 18 }}
-        className="glass-depth-subtle fixed left-1/2 top-3 z-50 flex w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] items-center justify-start gap-1 overflow-x-auto rounded-full px-2 py-2 sm:top-5 sm:w-auto sm:max-w-[calc(100vw-2rem)]"
+        className="glass-depth-subtle fixed left-1/2 top-[calc(0.75rem+env(safe-area-inset-top))] z-50 flex w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] items-center justify-start gap-0 overflow-x-auto rounded-full px-1 py-2 sm:top-5 sm:w-auto sm:max-w-[calc(100vw-2rem)] sm:gap-1 sm:px-2"
       >
         {items.map((item) => {
           const active = pathname === item.href
@@ -59,7 +59,7 @@ export default function PremiumNav() {
                 setPendingHref(item.href)
                 router.push(item.href)
               }}
-              className={`relative flex h-9 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-medium transition active:scale-95 sm:h-10 sm:px-4 ${
+              className={`relative flex h-12 min-w-12 shrink-0 items-center justify-center gap-2 rounded-full px-0 text-xs font-medium transition active:scale-95 sm:h-10 sm:min-w-0 sm:px-4 ${
                 active || pending ? 'text-white' : 'text-white/48 hover:text-white/84'
               } ${pending ? 'bg-[#f59e0b]/12 shadow-[0_0_30px_rgba(245,158,11,0.16),inset_0_1px_0_rgba(255,255,255,0.16)]' : ''} ${
                 navigating && !pending && !active ? 'pointer-events-none opacity-45' : ''
@@ -72,9 +72,9 @@ export default function PremiumNav() {
                 />
               ) : null}
               {pending ? (
-                <Loader2 className="relative h-4 w-4 animate-spin text-[#f59e0b]" strokeWidth={1.8} />
+                <Loader2 className="relative h-5 w-5 animate-spin text-[#f59e0b] sm:h-4 sm:w-4" strokeWidth={1.8} />
               ) : (
-                <Icon className="relative h-4 w-4" strokeWidth={1.6} />
+                <Icon className="relative h-5 w-5 sm:h-4 sm:w-4" strokeWidth={1.6} />
               )}
               <span className="relative hidden sm:inline">{pending ? 'Opening...' : item.label}</span>
             </button>
@@ -88,10 +88,10 @@ export default function PremiumNav() {
             clearAuthToken()
             router.replace('/login')
           }}
-          className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/42 transition hover:bg-white/10 hover:text-white active:scale-95 sm:h-10 sm:w-10"
+          className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full text-white/42 transition hover:bg-white/10 hover:text-white active:scale-95 sm:h-10 sm:w-10"
           aria-label="Sign out"
         >
-          <LogOut className="h-4 w-4" strokeWidth={1.6} />
+          <LogOut className="h-5 w-5 sm:h-4 sm:w-4" strokeWidth={1.6} />
         </button>
       </motion.nav>
     </>

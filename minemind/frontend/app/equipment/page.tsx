@@ -96,11 +96,11 @@ function EquipmentDetails({
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-[#888888]">{equipment.id}</p>
-          <h2 className="mt-1 text-xl font-semibold text-white">{equipment.name}</h2>
+          <h2 className="mt-1 break-words text-xl font-semibold text-white">{equipment.name}</h2>
         </div>
-        <button type="button" onClick={onClose} className="text-[#888888] hover:text-white">
+        <button type="button" onClick={onClose} className="min-h-11 shrink-0 rounded-full px-3 text-[#888888] hover:text-white">
           Close
         </button>
       </div>
@@ -114,7 +114,7 @@ function EquipmentDetails({
         type="button"
         onPointerDown={onAsk}
         onClick={onAsk}
-        className="mt-8 w-full rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
+        className="mt-8 min-h-11 w-full rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
       >
         Ask AI About This Equipment
       </button>
@@ -199,7 +199,7 @@ export default function EquipmentPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/documents')}
-                  className="mt-4 rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
+                  className="mt-4 min-h-11 rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
                 >
                   Upload a document
                 </button>

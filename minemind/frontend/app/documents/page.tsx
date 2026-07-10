@@ -288,7 +288,7 @@ export default function DocumentsPage() {
                   whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.94 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-300 ${
+                  className={`min-h-11 rounded-full border px-4 py-2.5 text-sm font-medium transition duration-300 ${
                     selectedType === item.value
                       ? 'border-white/20 bg-gradient-to-b from-neutral-700 to-neutral-800 text-white shadow-[0_0_30px_rgba(255,255,255,0.05)]'
                       : 'border-white/10 bg-white/5 text-neutral-400 hover:border-white/20 hover:text-white'
@@ -325,7 +325,7 @@ export default function DocumentsPage() {
                   style={{
                     transformStyle: 'preserve-3d'
                   }}
-                  className="group relative overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.068),rgba(255,255,255,0.025))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-2xl transition duration-500 hover:border-[#c8dcff]/26 hover:bg-white/[0.075] hover:shadow-[0_34px_120px_rgba(188,215,255,0.09)]"
+                  className="group relative min-w-0 overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.068),rgba(255,255,255,0.025))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-2xl transition duration-500 hover:border-[#c8dcff]/26 hover:bg-white/[0.075] hover:shadow-[0_34px_120px_rgba(188,215,255,0.09)]"
                 >
                   <div className="pointer-events-none absolute inset-0 opacity-0 transition duration-500 group-hover:opacity-100">
                     <div className="absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#c8dcff]/10 blur-3xl" />
@@ -340,7 +340,7 @@ export default function DocumentsPage() {
                     </span>
                   </div>
 
-                  <h3 className="relative mt-6 line-clamp-3 min-h-[5.25rem] text-xl font-semibold leading-7 tracking-tight text-white/88">
+                  <h3 className="relative mt-6 line-clamp-3 min-h-[5.25rem] break-words text-xl font-semibold leading-7 tracking-tight text-white/88">
                     {doc.name}
                   </h3>
 
@@ -359,7 +359,7 @@ export default function DocumentsPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedDocument(doc)}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm font-medium text-white/66 transition hover:bg-white hover:text-black hover:shadow-[0_18px_60px_rgba(188,215,255,0.14)]"
+                      className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm font-medium text-white/66 transition hover:bg-white hover:text-black hover:shadow-[0_18px_60px_rgba(188,215,255,0.14)]"
                     >
                       <Eye className="h-4 w-4" strokeWidth={1.5} />
                       Preview
@@ -382,7 +382,7 @@ export default function DocumentsPage() {
               type="button"
               onClick={loadMoreDocuments}
               disabled={loadingMore}
-              className="mt-6 w-full rounded-full border border-white/10 bg-white/[0.055] px-5 py-3 text-sm font-medium text-white/68 transition hover:border-white/22 hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-50"
+              className="mt-6 min-h-11 w-full rounded-full border border-white/10 bg-white/[0.055] px-5 py-3 text-sm font-medium text-white/68 transition hover:border-white/22 hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-50"
             >
               {loadingMore ? 'Loading more...' : 'Load more files'}
             </button>
@@ -396,7 +396,7 @@ export default function DocumentsPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/55 px-4 py-6 backdrop-blur-2xl sm:px-6"
+            className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/55 px-4 py-[calc(1.5rem+env(safe-area-inset-bottom))] backdrop-blur-2xl sm:px-6"
             onClick={() => setSelectedDocument(null)}
           >
             <motion.div
@@ -449,7 +449,7 @@ export default function DocumentsPage() {
                     <button
                       type="button"
                       onClick={() => window.open(previewUrl, '_blank', 'noopener,noreferrer')}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.07] px-4 py-2 text-sm font-medium text-white/72 transition hover:bg-white hover:text-black"
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.07] px-4 py-2 text-sm font-medium text-white/72 transition hover:bg-white hover:text-black"
                     >
                       Open in new tab
                       <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
