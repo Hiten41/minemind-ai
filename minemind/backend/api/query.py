@@ -58,7 +58,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 1800
 MAX_CONTEXT_CHARS = 5200
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "pdf-grounding-v1"
+CACHE_VERSION = "pdf-grounding-v2"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -1379,8 +1379,9 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         overview_instruction = (
             "DOCUMENT OVERVIEW MODE:\n"
             "- The user is asking what is inside/listed in the focused PDF.\n"
+            "- Do not answer with a risk profile unless the user explicitly asks for risks, hazards, danger, or risk assessment.\n"
             "- Do not answer only with the PDF title.\n"
-            "- Summarize the recalled context as a compact list of actual items shown, such as the regulation name, legal basis, chapter/section names, scope/application, definitions, duties, tables, or safety topics.\n"
+            "- Summarize the stored PDF evidence as a compact list of actual sections, headings, events, rules, requirements, dates, thresholds, equipment, corrective actions, training items, or other concrete contents shown.\n"
             "- If only the start of the PDF was recalled, say that the recalled portion shows those items, not the whole PDF.\n"
         )
     risk_instruction = ""
