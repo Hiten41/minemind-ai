@@ -17,6 +17,18 @@ body {
   overflow-x: hidden;
 }
 
+html,
+body {
+  max-width: 100%;
+}
+
+@supports (overflow: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
 ::selection {
   background: rgba(215, 183, 121, 0.32);
 }

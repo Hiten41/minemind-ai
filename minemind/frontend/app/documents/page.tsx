@@ -1,12 +1,12 @@
 'use client'
 
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, type Variants } from 'framer-motion'
-import { Eye, FileText, Layers3, Trash2, X } from 'lucide-react'
+import { ExternalLink, Eye, FileText, Layers3, Loader2, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import PremiumNav from '@/components/experience/PremiumNav'
 import UploadZone from '@/components/upload/UploadZone'
-import { forgetDataset, getDocumentsPage, uploadDocument } from '@/lib/api'
+import { forgetDataset, getDocumentFile, getDocumentsPage, uploadDocument } from '@/lib/api'
 import type { Document } from '@/types'
 
 const typeLabels = [
@@ -50,10 +50,14 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
   const [hasMoreDocuments, setHasMoreDocuments] = useState(false)
+  const [documentsLoading, setDocumentsLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [selectedType, setSelectedType] = useState('regulation')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [previewError, setPreviewError] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [toast, setToast] = useState('')
@@ -68,20 +72,72 @@ export default function DocumentsPage() {
   const sheenY = useTransform(smoothY, (value) => value * -10)
 
   useEffect(() => {
-    getDocumentsPage({ limit: 50 })
+    let cancelled = false
+
+    setError('')
+    setDocuments([])
+    setTotalDocuments(0)
+    setHasMoreDocuments(false)
+    setDocumentsLoading(true)
+    getDocumentsPage({ limit: 50, type: selectedType })
       .then((page) => {
+        if (cancelled) return
         setDocuments(page.items)
         setTotalDocuments(page.total)
         setHasMoreDocuments(page.has_more)
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to fetch documents'))
-  }, [])
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch documents')
+      })
+      .finally(() => {
+        if (!cancelled) setDocumentsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedType])
+
+  useEffect(() => {
+    if (!selectedDocument) {
+      setPreviewUrl('')
+      setPreviewError('')
+      setPreviewLoading(false)
+      return
+    }
+
+    let cancelled = false
+    let objectUrl = ''
+    setPreviewUrl('')
+    setPreviewError('')
+    setPreviewLoading(true)
+
+    getDocumentFile(selectedDocument.id)
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setPreviewUrl(objectUrl)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPreviewError(err instanceof Error ? err.message : 'Original file is not available for preview')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [selectedDocument])
 
   async function loadMoreDocuments() {
     setLoadingMore(true)
     setError('')
     try {
-      const page = await getDocumentsPage({ limit: 50, offset: documents.length })
+      const page = await getDocumentsPage({ limit: 50, offset: documents.length, type: selectedType })
       setDocuments((current) => [...current, ...page.items])
       setTotalDocuments(page.total)
       setHasMoreDocuments(page.has_more)
@@ -111,8 +167,15 @@ export default function DocumentsPage() {
     }, 180)
     try {
       const doc = await uploadDocument(selectedFile, selectedType)
-      setDocuments((current) => [doc, ...current])
-      setTotalDocuments((current) => current + 1)
+      if (doc.type === selectedType) {
+        setDocuments((current) => [doc, ...current])
+        setTotalDocuments((current) => current + 1)
+      } else {
+        setSelectedType(doc.type)
+        setDocuments([doc])
+        setTotalDocuments(1)
+        setHasMoreDocuments(false)
+      }
       setToast('Uploaded. MineMind will continue indexing it in the background.')
       setSelectedFile(null)
       setUploadProgress(100)
@@ -154,11 +217,11 @@ export default function DocumentsPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_72%,rgba(255,255,255,0.05),transparent_24%),radial-gradient(circle_at_84%_34%,rgba(255,255,255,0.08),transparent_26%)]" />
       <motion.div
         style={{ x: orbX, y: orbY }}
-        className="pointer-events-none absolute right-[8%] top-[15%] h-[420px] w-[420px] rounded-full bg-[#bcd7ff]/[0.075] blur-3xl"
+        className="pointer-events-none absolute right-[8%] top-[15%] h-[min(420px,82vw)] w-[min(420px,82vw)] rounded-full bg-[#bcd7ff]/[0.075] blur-3xl"
       />
       <motion.div
         style={{ x: sheenX, y: sheenY }}
-        className="pointer-events-none absolute left-[7%] top-[48%] h-[360px] w-[360px] rounded-full bg-white/[0.045] blur-3xl"
+        className="pointer-events-none absolute left-[7%] top-[48%] h-[min(360px,78vw)] w-[min(360px,78vw)] rounded-full bg-white/[0.045] blur-3xl"
       />
 
       <motion.header
@@ -178,11 +241,11 @@ export default function DocumentsPage() {
           <div className="grid grid-cols-2 gap-3 text-right">
             <div className="rounded-3xl border border-white/10 bg-white/[0.045] px-5 py-4 backdrop-blur-2xl">
               <p className="tracked-label text-[9px] text-white/32">Files</p>
-              <p className="mt-2 text-2xl font-semibold text-white/86">{documents.length}</p>
+              <p className="mt-2 text-2xl font-semibold text-white/86">{documentsLoading ? '...' : documents.length}</p>
             </div>
             <div className="rounded-3xl border border-white/10 bg-white/[0.045] px-5 py-4 backdrop-blur-2xl">
               <p className="tracked-label text-[9px] text-white/32">Indexed sections</p>
-              <p className="mt-2 text-2xl font-semibold text-white/86">{totalNodes}</p>
+              <p className="mt-2 text-2xl font-semibold text-white/86">{documentsLoading ? '...' : totalNodes}</p>
             </div>
           </div>
         </div>
@@ -234,7 +297,7 @@ export default function DocumentsPage() {
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white/88">Recent files</h2>
               </div>
               <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/46 backdrop-blur-xl">
-                {documents.length} of {totalDocuments || documents.length} items
+                {documentsLoading ? 'Loading files...' : `${documents.length} of ${totalDocuments || documents.length} items`}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -246,7 +309,7 @@ export default function DocumentsPage() {
                   whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.94 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-300 ${
+                  className={`min-h-11 rounded-full border px-4 py-2.5 text-sm font-medium transition duration-300 ${
                     selectedType === item.value
                       ? 'border-white/20 bg-gradient-to-b from-neutral-700 to-neutral-800 text-white shadow-[0_0_30px_rgba(255,255,255,0.05)]'
                       : 'border-white/10 bg-white/5 text-neutral-400 hover:border-white/20 hover:text-white'
@@ -258,8 +321,20 @@ export default function DocumentsPage() {
             </div>
           </div>
 
-          {documents.length === 0 ? (
-          <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
+          {documentsLoading ? (
+            <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
+              <div>
+                <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/[0.05] text-white/58">
+                  <Loader2 className="h-7 w-7 animate-spin" strokeWidth={1.35} />
+                </div>
+                <p className="mt-5 text-xl font-semibold text-white/82">Loading files</p>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-white/42">
+                  Reading your indexed document memory.
+                </p>
+              </div>
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="grid min-h-[320px] place-items-center rounded-[2rem] border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_30px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:min-h-[420px] sm:p-10">
               <div>
                 <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/[0.05] text-white/58">
                   <Layers3 className="h-7 w-7" strokeWidth={1.35} />
@@ -283,7 +358,7 @@ export default function DocumentsPage() {
                   style={{
                     transformStyle: 'preserve-3d'
                   }}
-                  className="group relative overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.068),rgba(255,255,255,0.025))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-2xl transition duration-500 hover:border-[#c8dcff]/26 hover:bg-white/[0.075] hover:shadow-[0_34px_120px_rgba(188,215,255,0.09)]"
+                  className="group relative min-w-0 overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.068),rgba(255,255,255,0.025))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-2xl transition duration-500 hover:border-[#c8dcff]/26 hover:bg-white/[0.075] hover:shadow-[0_34px_120px_rgba(188,215,255,0.09)]"
                 >
                   <div className="pointer-events-none absolute inset-0 opacity-0 transition duration-500 group-hover:opacity-100">
                     <div className="absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#c8dcff]/10 blur-3xl" />
@@ -298,7 +373,7 @@ export default function DocumentsPage() {
                     </span>
                   </div>
 
-                  <h3 className="relative mt-6 line-clamp-3 min-h-[5.25rem] text-xl font-semibold leading-7 tracking-tight text-white/88">
+                  <h3 className="relative mt-6 line-clamp-3 min-h-[5.25rem] break-words text-xl font-semibold leading-7 tracking-tight text-white/88">
                     {doc.name}
                   </h3>
 
@@ -317,7 +392,7 @@ export default function DocumentsPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedDocument(doc)}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm font-medium text-white/66 transition hover:bg-white hover:text-black hover:shadow-[0_18px_60px_rgba(188,215,255,0.14)]"
+                      className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm font-medium text-white/66 transition hover:bg-white hover:text-black hover:shadow-[0_18px_60px_rgba(188,215,255,0.14)]"
                     >
                       <Eye className="h-4 w-4" strokeWidth={1.5} />
                       Preview
@@ -340,7 +415,7 @@ export default function DocumentsPage() {
               type="button"
               onClick={loadMoreDocuments}
               disabled={loadingMore}
-              className="mt-6 w-full rounded-full border border-white/10 bg-white/[0.055] px-5 py-3 text-sm font-medium text-white/68 transition hover:border-white/22 hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-50"
+              className="mt-6 min-h-11 w-full rounded-full border border-white/10 bg-white/[0.055] px-5 py-3 text-sm font-medium text-white/68 transition hover:border-white/22 hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-50"
             >
               {loadingMore ? 'Loading more...' : 'Load more files'}
             </button>
@@ -354,7 +429,7 @@ export default function DocumentsPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] grid place-items-center bg-black/55 px-6 backdrop-blur-2xl"
+            className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/55 px-4 py-[calc(1.5rem+env(safe-area-inset-bottom))] backdrop-blur-2xl sm:px-6"
             onClick={() => setSelectedDocument(null)}
           >
             <motion.div
@@ -362,13 +437,13 @@ export default function DocumentsPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 18, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 95, damping: 18 }}
-              className="w-full max-w-2xl rounded-[40px] border border-white/14 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.045))] p-7 shadow-[0_40px_140px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-3xl"
+              className="max-h-[calc(100dvh-3rem)] w-full max-w-6xl overflow-y-auto rounded-[32px] border border-white/14 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.045))] p-5 shadow-[0_40px_140px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-3xl sm:rounded-[40px] sm:p-7"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-start justify-between gap-5">
-                <div>
+                <div className="min-w-0">
                   <p className="tracked-label text-[10px] text-white/36">Preview</p>
-                  <h3 className="mt-3 text-3xl font-semibold leading-tight tracking-tight text-white">
+                  <h3 className="mt-3 break-all text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
                     {selectedDocument.name}
                   </h3>
                 </div>
@@ -393,6 +468,53 @@ export default function DocumentsPage() {
                     <p className="mt-2 text-sm font-medium text-white/78">{value}</p>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-[28px] border border-white/10 bg-black/30">
+                <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white/78">Original document</p>
+                    <p className="mt-1 text-xs text-white/38">
+                      {previewLoading ? 'Loading file preview...' : previewUrl ? 'PDF preview is ready.' : 'Preview unavailable for this file.'}
+                    </p>
+                  </div>
+                  {previewUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => window.open(previewUrl, '_blank', 'noopener,noreferrer')}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.07] px-4 py-2 text-sm font-medium text-white/72 transition hover:bg-white hover:text-black"
+                    >
+                      Open in new tab
+                      <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
+                    </button>
+                  ) : null}
+                </div>
+                {previewLoading ? (
+                  <div className="grid h-[360px] place-items-center text-white/48">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.8} />
+                      Loading preview
+                    </div>
+                  </div>
+                ) : previewUrl ? (
+                  <iframe
+                    src={previewUrl}
+                    title={`Preview ${selectedDocument.name}`}
+                    className="h-[min(70dvh,720px)] w-full bg-white"
+                  />
+                ) : (
+                  <div className="grid min-h-[240px] place-items-center px-5 py-8 text-center">
+                    <div>
+                      <FileText className="mx-auto h-8 w-8 text-white/42" strokeWidth={1.4} />
+                      <p className="mt-4 text-sm leading-6 text-white/56">
+                        {previewError || 'Original file is not available for preview.'}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-white/34">
+                        Older uploads only stored extracted text. Re-upload this PDF once to enable the real PDF preview.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-5">

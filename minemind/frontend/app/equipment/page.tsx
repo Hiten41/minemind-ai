@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import EquipmentCard, { type Equipment } from '@/components/cards/EquipmentCard'
 import PremiumNav from '@/components/experience/PremiumNav'
 import { getDocumentIntelligence, getGraphData } from '@/lib/api'
-import type { DocumentIntelligence, DocumentIntelligenceItem, GraphNode } from '@/types'
+import type { DocumentIntelligenceItem, GraphNode } from '@/types'
 
 function deriveStatus(text: string): Equipment['status'] {
   const lowered = text.toLowerCase()
@@ -30,6 +30,22 @@ function deriveIncidents(text: string): number {
 function deriveLastInspection(text: string): string {
   const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b|\b\d{2}\/\d{2}\/\d{4}\b/)
   return dateMatch?.[0] ?? 'Recorded in your uploaded documents'
+}
+
+const riskRank: Record<Equipment['risk'], number> = {
+  Low: 0,
+  Medium: 1,
+  High: 2
+}
+
+const statusRank: Record<Equipment['status'], number> = {
+  Active: 0,
+  Maintenance: 1,
+  Offline: 2
+}
+
+function equipmentKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
 function nodeToEquipment(node: GraphNode): Equipment {
@@ -66,20 +82,42 @@ function documentEquipmentItems(documents: DocumentIntelligenceItem[]): Equipmen
   return Array.from(items.values())
 }
 
+function mergeEquipmentItems(items: Equipment[]): Equipment[] {
+  const merged = new Map<string, Equipment>()
+
+  for (const item of items) {
+    const key = equipmentKey(item.name)
+    if (!key) continue
+    const existing = merged.get(key)
+
+    if (!existing) {
+      merged.set(key, item)
+      continue
+    }
+
+    merged.set(key, {
+      ...existing,
+      id: existing.id,
+      name: existing.name.length >= item.name.length ? existing.name : item.name,
+      status: statusRank[item.status] > statusRank[existing.status] ? item.status : existing.status,
+      risk: riskRank[item.risk] > riskRank[existing.risk] ? item.risk : existing.risk,
+      incidents: Math.min(99, existing.incidents + item.incidents),
+      lastInspection: existing.lastInspection.includes('uploaded documents') ? item.lastInspection : existing.lastInspection
+    })
+  }
+
+  return Array.from(merged.values()).sort((a, b) => (
+    riskRank[b.risk] - riskRank[a.risk] ||
+    b.incidents - a.incidents ||
+    a.name.localeCompare(b.name)
+  ))
+}
+
 function graphWithTimeout() {
   return Promise.race([
     getGraphData(),
     new Promise<{ nodes: GraphNode[]; edges: [] }>((resolve) => {
-      window.setTimeout(() => resolve({ nodes: [], edges: [] }), 8000)
-    })
-  ])
-}
-
-function documentIntelligenceWithTimeout() {
-  return Promise.race([
-    getDocumentIntelligence(),
-    new Promise<DocumentIntelligence>((resolve) => {
-      window.setTimeout(() => resolve({ documents: [], top_entities: [] }), 8000)
+      window.setTimeout(() => resolve({ nodes: [], edges: [] }), 12000)
     })
   ])
 }
@@ -96,11 +134,11 @@ function EquipmentDetails({
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-[#888888]">{equipment.id}</p>
-          <h2 className="mt-1 text-xl font-semibold text-white">{equipment.name}</h2>
+          <h2 className="mt-1 break-words text-xl font-semibold text-white">{equipment.name}</h2>
         </div>
-        <button type="button" onClick={onClose} className="text-[#888888] hover:text-white">
+        <button type="button" onClick={onClose} className="min-h-11 shrink-0 rounded-full px-3 text-[#888888] hover:text-white">
           Close
         </button>
       </div>
@@ -114,7 +152,7 @@ function EquipmentDetails({
         type="button"
         onPointerDown={onAsk}
         onClick={onAsk}
-        className="mt-8 w-full rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
+        className="mt-8 min-h-11 w-full rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
       >
         Ask AI About This Equipment
       </button>
@@ -132,13 +170,14 @@ export default function EquipmentPage() {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([graphWithTimeout(), documentIntelligenceWithTimeout()])
+    Promise.all([graphWithTimeout(), getDocumentIntelligence()])
       .then(([graph, intelligence]) => {
         if (cancelled) return
         const equipmentNodes = graph.nodes.filter((node) => node.type === 'equipment')
-        const nextItems = equipmentNodes.length > 0
-          ? equipmentNodes.map(nodeToEquipment)
-          : documentEquipmentItems(intelligence.documents)
+        const nextItems = mergeEquipmentItems([
+          ...equipmentNodes.map(nodeToEquipment),
+          ...documentEquipmentItems(intelligence.documents)
+        ])
         setItems(nextItems)
         setSelectedEquipment((current) => {
           if (!current) return current
@@ -165,7 +204,7 @@ export default function EquipmentPage() {
   }, [error, loading])
 
   function askAboutEquipment(equipment: Equipment) {
-    router.push(`/chat?q=${encodeURIComponent(`Tell me about ${equipment.name} maintenance history and any associated incidents or safety concerns`)}`)
+    router.push(`/chat?q=${encodeURIComponent(`Where is ${equipment.name} mentioned in my uploaded documents, and what incidents, maintenance duties, or safety concerns are associated with it?`)}`)
   }
 
   return (
@@ -199,7 +238,7 @@ export default function EquipmentPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/documents')}
-                  className="mt-4 rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
+                  className="mt-4 min-h-11 rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/15"
                 >
                   Upload a document
                 </button>

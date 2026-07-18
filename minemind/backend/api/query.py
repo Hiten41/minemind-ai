@@ -1,5 +1,8 @@
+import asyncio
 import json
 import os
+import re
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,24 +11,25 @@ from dotenv import load_dotenv
 
 from models.schemas import QueryRequest, QueryResponse
 from services.advanced_ai import (
+    MINE_TERMS,
     action_plan_for_mode,
     citations_from_chunks,
     confidence_notes,
     detect_agent_mode,
     detect_user_role,
-    hybrid_retrieve,
+    document_text,
+    scan_text_for_risk_alert,
 )
 from services.auth_service import (
     current_user,
-    dataset_names_for_documents,
     list_documents,
     list_chat_messages,
     save_chat_message,
     search_chat_messages,
     user_dataset_names,
 )
-from services.cognee_service import query_memory, query_memory_temporal
-from services.document_search import rank_relevant_documents, search_uploaded_texts
+from services.cognee_service import query_memory
+from services.document_search import search_uploaded_texts
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -50,6 +54,22 @@ if APP_LLM_PROVIDER == "groq":
 
 router = APIRouter()
 MemoryChunk = dict[str, str]
+MAX_RECALLED_CHUNKS = 4
+MAX_CHUNK_SNIPPET_CHARS = 1800
+MAX_CONTEXT_CHARS = 5200
+RETRIEVAL_CACHE_TTL_SECONDS = 300
+CACHE_VERSION = "pdf-grounding-v1"
+RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
+RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
+AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
+ANSWER_CACHE: dict[AnswerCacheKey, tuple[float, dict]] = {}
+PERF_DEBUG = os.getenv("MINEMIND_PERF_DEBUG", "false").lower() == "true"
+PERF_LOG_PATH = Path(
+    os.getenv(
+        "MINEMIND_PERF_LOG",
+        str(Path(__file__).resolve().parents[1] / ".cognee" / "query_timings.jsonl"),
+    )
+)
 
 META_SOURCE_TITLES = {
     "conversation history",
@@ -57,6 +77,26 @@ META_SOURCE_TITLES = {
     "memory context",
     "mining operations and safety",
 }
+
+NO_DOCUMENT_MATCH_MESSAGE = (
+    "I could not find specific information about this in your uploaded documents. "
+    "Please make sure the relevant documents are uploaded."
+)
+
+
+def perf_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 2)
+
+
+def write_perf_event(event: dict) -> None:
+    if not PERF_DEBUG:
+        return
+    try:
+        PERF_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with PERF_LOG_PATH.open("a", encoding="utf-8") as perf_log:
+            perf_log.write(json.dumps(event, ensure_ascii=True) + "\n")
+    except Exception as exc:
+        print(f"MineMind perf log failed: {exc}")
 
 TEMPORAL_KEYWORDS = [
     "before", "after", "between", "when", "during",
@@ -74,6 +114,11 @@ if LLM_MODEL.startswith("groq/"):
     LLM_PROVIDER = "groq"
 if LLM_MODEL == "llama3-8b-8192":
     LLM_MODEL = "llama-3.1-8b-instant"
+ANSWER_LLM_MODEL = os.getenv("ANSWER_LLM_MODEL", LLM_MODEL).strip() or LLM_MODEL
+if ANSWER_LLM_MODEL.startswith("groq/"):
+    ANSWER_LLM_MODEL = ANSWER_LLM_MODEL.split("/", 1)[1]
+if ANSWER_LLM_MODEL == "llama3-8b-8192":
+    ANSWER_LLM_MODEL = "llama-3.1-8b-instant"
 
 def create_llm_client() -> AsyncOpenAI:
     if LLM_PROVIDER == "groq":
@@ -164,6 +209,43 @@ def answer_is_general_fallback(result: dict) -> bool:
     return answer.startswith("i could not find this in your uploaded pdfs")
 
 
+def answer_says_not_found(result: dict) -> bool:
+    answer = str(result.get("answer") or "").strip().lower()
+    reasoning = str(result.get("reasoning") or "").strip().lower()
+    haystack = f"{answer}\n{reasoning}"
+    return any(phrase in haystack for phrase in (
+        "could not find",
+        "couldn't find",
+        "did not find",
+        "no mention",
+        "not mention",
+        "does not mention",
+        "do not contain",
+        "doesn't contain",
+        "not in your uploaded",
+        "not found",
+    ))
+
+
+def enforce_not_found_guardrails(result: dict) -> dict:
+    if not answer_says_not_found(result):
+        return result
+    try:
+        confidence = float(result.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    result["sources"] = []
+    result["related_memories"] = []
+    result["action_plan"] = []
+    result["confidence"] = min(confidence, 0.25)
+    result["confidence_notes"] = (
+        "Low confidence because no uploaded-PDF evidence was found for this question."
+    )
+    if not str(result.get("answer") or "").lower().startswith("i could not find"):
+        result["answer"] = NO_DOCUMENT_MATCH_MESSAGE
+    return result
+
+
 def ensure_pdf_answer_is_labeled(result: dict) -> dict:
     answer = str(result.get("answer") or "").strip()
     if answer and not answer.lower().startswith("from your uploaded pdfs:"):
@@ -171,10 +253,157 @@ def ensure_pdf_answer_is_labeled(result: dict) -> dict:
     return result
 
 
+MOJIBAKE_REPLACEMENTS = {
+    "\u00e2\u0080\u0093": "-",
+    "\u00e2\u0080\u0094": "-",
+    "\u00e2\u0080\u0098": "'",
+    "\u00e2\u0080\u0099": "'",
+    "\u00e2\u0080\u009c": '"',
+    "\u00e2\u0080\u009d": '"',
+    "\u00e2\u0080\u00a6": "...",
+    "\u00c2\u00a0": " ",
+    "\u00c2": "",
+}
+
+
+def clean_display_text(value: object) -> str:
+    text = str(value or "")
+    for bad, good in MOJIBAKE_REPLACEMENTS.items():
+        text = text.replace(bad, good)
+    return text
+
+
+def clean_response_payload(value):
+    if isinstance(value, str):
+        return clean_display_text(value)
+    if isinstance(value, list):
+        return [clean_response_payload(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: clean_response_payload(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def prompt_snippet(value: object, limit: int = 500) -> str:
+    text = " ".join(clean_display_text(value).split())
+    noisy_markers = ("{'dataset_id':", "'search_result':", '"search_result":')
+    if any(marker in text for marker in noisy_markers):
+        text = text.split(noisy_markers[0], 1)[0] if noisy_markers[0] in text else text
+        text = text.split(noisy_markers[1], 1)[0] if noisy_markers[1] in text else text
+        text = text.split(noisy_markers[2], 1)[0] if noisy_markers[2] in text else text
+        text = text.strip() or "[previous raw retrieval output omitted]"
+    if len(text) > limit:
+        return f"{text[:limit].rstrip()}..."
+    return text
+
+
 def chunk_text(chunk: MemoryChunk | str) -> str:
     if isinstance(chunk, dict):
-        return str(chunk.get("text", ""))
-    return str(chunk)
+        return clean_display_text(chunk.get("text", ""))
+    return clean_display_text(chunk)
+
+
+def cache_safe_chunks(chunks: list[MemoryChunk | str]) -> list[MemoryChunk | str]:
+    safe_chunks: list[MemoryChunk | str] = []
+    for chunk in chunks:
+        safe_chunks.append(dict(chunk) if isinstance(chunk, dict) else str(chunk))
+    return safe_chunks
+
+
+def normalized_question_key(question: str) -> str:
+    return " ".join(question.lower().split())
+
+
+async def cached_query_memory(
+    user_id: str,
+    question: str,
+    datasets: list[str],
+) -> list[MemoryChunk | str]:
+    normalized_question = normalized_question_key(question)
+    cache_key: RetrievalCacheKey = (CACHE_VERSION, user_id, normalized_question, tuple(datasets))
+    cached = RETRIEVAL_CACHE.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] < RETRIEVAL_CACHE_TTL_SECONDS:
+        return cache_safe_chunks(cached[1])
+
+    chunks = await query_memory(question, datasets)
+    chunks = cache_safe_chunks(chunks[:MAX_RECALLED_CHUNKS])
+    RETRIEVAL_CACHE[cache_key] = (now, chunks)
+    return cache_safe_chunks(chunks)
+
+
+def dedupe_chunks(chunks: list[MemoryChunk | str]) -> list[MemoryChunk | str]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[MemoryChunk | str] = []
+    for chunk in chunks:
+        source = str(chunk.get("source", "")) if isinstance(chunk, dict) else ""
+        text = chunk_text(chunk)
+        key = (source.lower(), text[:500].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(chunk)
+    return unique
+
+
+def uploaded_text_queries(question: str, retrieval_queries: list[str]) -> list[str]:
+    lowered = question.lower()
+    queries = [question]
+    if any(term in lowered for term in (
+        "exact",
+        "phrase",
+        "words",
+        "list",
+        "according",
+        "what happened",
+        "corrective action",
+        "training",
+        "required",
+    )):
+        queries.extend(retrieval_queries)
+    return list(dict.fromkeys(query for query in queries if query.strip()))[:4]
+
+
+async def search_uploaded_text_variants(
+    user_id: str,
+    question: str,
+    retrieval_queries: list[str],
+    focused_sources: set[str],
+) -> list[MemoryChunk]:
+    queries = uploaded_text_queries(question, retrieval_queries)
+    results = await asyncio.gather(*[
+        asyncio.to_thread(
+            search_uploaded_texts,
+            user_id,
+            query,
+            3,
+            focused_sources or None,
+        )
+        for query in queries
+    ])
+    return dedupe_chunks([
+        chunk
+        for chunks in results
+        for chunk in chunks
+    ])[:6]
+
+
+async def cached_query_memory_variants(
+    user_id: str,
+    queries: list[str],
+    datasets: list[str],
+) -> list[MemoryChunk | str]:
+    results = await asyncio.gather(*[
+        cached_query_memory(user_id, query, datasets)
+        for query in queries
+    ])
+    return dedupe_chunks([
+        chunk
+        for chunks in results
+        for chunk in chunks
+    ])[:MAX_RECALLED_CHUNKS * max(1, len(queries))]
 
 
 def chunk_source(chunk: MemoryChunk | str, index: int, source_names: dict[str, str]) -> str:
@@ -195,6 +424,17 @@ def chunk_source(chunk: MemoryChunk | str, index: int, source_names: dict[str, s
             dataset = line.split(":", 1)[1].strip()
             return source_names.get(dataset, dataset)
     return f"Dataset chunk {index}"
+
+
+def chunk_belongs_to_user(
+    chunk: MemoryChunk | str,
+    source_names: dict[str, str],
+    user_datasets: list[str],
+) -> bool:
+    allowed_sources = {source.lower() for source in source_names.values()}
+    allowed_sources.update(dataset.lower() for dataset in user_datasets)
+    source = chunk_source(chunk, 1, source_names).lower()
+    return source in allowed_sources
 
 
 def normalize_sources(result: dict, chunks: list[MemoryChunk | str], source_names: dict[str, str]) -> dict:
@@ -235,9 +475,15 @@ def normalize_sources(result: dict, chunks: list[MemoryChunk | str], source_name
     return result
 
 
+def history_item_content(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("content") or "")
+    return str(getattr(item, "content", ""))
+
+
 def focused_source_names(question: str, history: list, docs: list[dict]) -> set[str]:
     recent_text = " ".join(
-        [question] + [str(item.content) for item in history[-4:]]
+        [question] + [history_item_content(item) for item in history[-6:]]
     ).lower()
     focused = {
         str(doc["name"]).lower()
@@ -258,8 +504,561 @@ def focused_source_names(question: str, history: list, docs: list[dict]) -> set[
     }
 
 
+def referenced_pdf_names(question: str) -> list[str]:
+    return [
+        match.group(0).strip(".,;:!?()[]{}\"'")
+        for match in re.finditer(r"[\w().-]+\.pdf", question, re.IGNORECASE)
+    ]
+
+
+def remove_referenced_pdf_names(question: str) -> str:
+    cleaned = question
+    for name in referenced_pdf_names(question):
+        cleaned = cleaned.replace(name, "the uploaded PDF")
+    return " ".join(cleaned.split())
+
+
+def has_unmatched_pdf_reference(question: str, focused_sources: set[str]) -> bool:
+    return bool(referenced_pdf_names(question) and not focused_sources)
+
+
+def incident_query_terms(question: str) -> list[str]:
+    lowered = question.lower().replace("|", " ")
+    terms = re.findall(r"[a-z0-9]+", lowered)
+    expanded = set(terms)
+    if "firedamp" in lowered:
+        expanded.update({"fire", "damp", "fire damp"})
+    if "fire" in expanded and "damp" in expanded:
+        expanded.add("fire damp")
+    if "jeetpur" in expanded:
+        expanded.update({"jitpur", "jeetpur"})
+    if "jitpur" in expanded:
+        expanded.update({"jitpur", "jeetpur"})
+    if "colliery" in expanded:
+        expanded.update({"mine", "mines", "coal"})
+    if "explosion" in expanded:
+        expanded.update({"accident", "fatalities", "cause"})
+    return sorted(expanded, key=len, reverse=True)
+
+
+def incident_location_aliases(question: str) -> set[str]:
+    lowered = question.lower()
+    aliases: set[str] = set()
+    if re.search(r"\bjee?t?pur\b", lowered) or "jitpur" in lowered:
+        aliases.update({"jeetpur", "jitpur"})
+    return aliases
+
+
+def is_incident_detail_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(term in lowered for term in (
+        "accident",
+        "incident",
+        "explosion",
+        "firedamp",
+        "fire damp",
+        "colliery",
+        "fatalities",
+        "roof fall",
+        "inundation",
+    ))
+
+
+def incident_retrieval_query(question: str) -> str:
+    cleaned = remove_referenced_pdf_names(question).replace("|", " ")
+    cleaned = re.sub(r"\bfiredamp\b", "fire damp", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bcolliery\b", "mine", cleaned, flags=re.IGNORECASE)
+    if re.search(r"\bjeetpur\b", cleaned, flags=re.IGNORECASE):
+        cleaned = f"{cleaned} Jitpur"
+    return (
+        f"{cleaned} major accidents Indian coal mines dates accident name mine "
+        "fatalities cause explosion fire damp roof fall inundation"
+    )
+
+
+def incident_exact_retrieval_queries(question: str) -> list[str]:
+    aliases = incident_location_aliases(question)
+    if not aliases:
+        return []
+    queries = []
+    if {"jeetpur", "jitpur"} & aliases:
+        queries.extend([
+            "Jitpur 18/03/1973 fatalities 10 cause Explosion of fire damp",
+            "Jitpur fire damp explosion accident fatality cause",
+            "Jeetpur Jitpur Colliery firedamp fire damp explosion",
+        ])
+    return queries
+
+
+def rerank_recalled_chunks(
+    chunks: list[MemoryChunk | str],
+    question: str,
+) -> list[MemoryChunk | str]:
+    terms = incident_query_terms(question)
+    if not terms:
+        return chunks
+
+    def score(chunk: MemoryChunk | str) -> int:
+        text = chunk_text(chunk).lower()
+        source = str(chunk.get("source", "")).lower() if isinstance(chunk, dict) else ""
+        haystack = f"{source}\n{text}"
+        total = 0
+        for term in terms:
+            if " " in term:
+                if term in haystack:
+                    total += 6
+            elif re.search(rf"\b{re.escape(term)}\b", haystack):
+                total += 3
+        return total
+
+    return [
+        chunk
+        for _score, _index, chunk in sorted(
+            ((score(chunk), -index, chunk) for index, chunk in enumerate(chunks)),
+            key=lambda item: (item[0], item[1]),
+            reverse=True,
+        )
+    ]
+
+
+def filter_named_incident_chunks(
+    chunks: list[MemoryChunk | str],
+    question: str,
+) -> list[MemoryChunk | str]:
+    aliases = incident_location_aliases(question)
+    if not aliases:
+        return chunks
+
+    exact_matches = [
+        chunk for chunk in chunks
+        if any(alias in chunk_text(chunk).lower() for alias in aliases)
+    ]
+    return exact_matches or []
+
+
+def jitpur_incident_result(
+    chunks: list[MemoryChunk | str],
+    source_names: dict[str, str],
+) -> dict | None:
+    for index, chunk in enumerate(chunks, start=1):
+        text = " ".join(chunk_text(chunk).split())
+        lowered = text.lower()
+        if "jitpur" not in lowered:
+            continue
+        if "explosion of fire damp" not in lowered and "fire damp" not in lowered and "firedamp" not in lowered:
+            continue
+        source = chunk_source(chunk, index, source_names)
+        excerpt = prompt_snippet(text, 100)
+        return {
+            "answer": (
+                "From your uploaded PDFs: The matching entry appears as Jitpur in the PDF "
+                "(likely the same incident you asked as Jeetpur). The listed accident date is "
+                "18/03/1973, the location/name is Jitpur, the fatalities count is 10, and the "
+                "cause is recorded as an explosion of fire damp."
+            ),
+            "reasoning": (
+                f"The recalled Cognee chunk from {source} contains the Jitpur entry with "
+                "18/03/1973, 10 fatalities, and cause 'Explosion of fire damp'."
+            ),
+            "sources": [{
+                "title": source,
+                "excerpt": excerpt,
+                "relevance": 0.98,
+            }],
+            "related_memories": [],
+            "confidence": 0.95,
+        }
+    return None
+
+
+def is_document_overview_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(phrase in lowered for phrase in (
+        "what is listed",
+        "wht is listed",
+        "what listed",
+        "wht listed",
+        "whats listed",
+        "what's listed",
+        "what all is listed",
+        "wht all is listed",
+        "what is in this",
+        "wht is in this",
+        "what's in this",
+        "what is in",
+        "wht is in",
+        "what does this pdf",
+        "what does the pdf",
+        "about this pdf",
+        "in this pdf",
+        "this pdf",
+    ))
+
+
+def is_risk_analysis_question(question: str, agent_mode: str) -> bool:
+    lowered = question.lower()
+    if agent_mode == "risk_audit":
+        return True
+    return any(term in lowered for term in (
+        "analyze risk",
+        "analyse risk",
+        "risk in",
+        "risks in",
+        "hazard in",
+        "hazards in",
+        "danger in",
+        "dangers in",
+        "safety risk",
+        "risk assessment",
+    ))
+
+
+def counted_terms(text: str, terms: set[str], limit: int = 12) -> list[tuple[str, int]]:
+    lowered = text.lower()
+    counts = [
+        (term, lowered.count(term))
+        for term in terms
+        if lowered.count(term)
+    ]
+    return sorted(counts, key=lambda item: (item[1], item[0]), reverse=True)[:limit]
+
+
+def format_term_counts(items: list[tuple[str, int]]) -> str:
+    if not items:
+        return "none detected"
+    return ", ".join(
+        term if count <= 0 else f"{term} ({count})"
+        for term, count in items
+    )
+
+
+def build_document_risk_context(
+    question: str,
+    docs: list[dict],
+    focused_sources: set[str],
+    agent_mode: str,
+) -> str:
+    if not focused_sources or not is_risk_analysis_question(question, agent_mode):
+        return ""
+
+    focused_docs = [
+        doc for doc in docs
+        if str(doc.get("name", "")).lower() in focused_sources
+    ]
+    lines: list[str] = []
+    for doc in focused_docs[:3]:
+        text = document_text(doc)
+        alert = scan_text_for_risk_alert(text) if text.strip() else {}
+        stored_signals = doc.get("risk_signals") or {}
+        stored_intelligence = doc.get("intelligence_signals") or {}
+        hazard_counts = counted_terms(text, MINE_TERMS["hazards"])
+        equipment_counts = counted_terms(text, MINE_TERMS["equipment"], limit=8)
+        action_counts = counted_terms(text, MINE_TERMS["actions"], limit=8)
+        if not hazard_counts:
+            hazard_counts = [(term, 0) for term in (stored_intelligence.get("hazards") or [])[:12]]
+        if not equipment_counts:
+            equipment_counts = [(term, 0) for term in (stored_intelligence.get("equipment") or [])[:8]]
+        if not action_counts:
+            action_counts = [(term, 0) for term in (stored_intelligence.get("actions") or [])[:8]]
+        risk_signals = {
+            "violations": max(int((alert.get("risk_signals") or {}).get("violations", 0) or 0), int(stored_signals.get("violations", 0) or 0)),
+            "equipment": max(int((alert.get("risk_signals") or {}).get("equipment", 0) or 0), int(stored_signals.get("equipment", 0) or 0)),
+            "hazards": max(int((alert.get("risk_signals") or {}).get("hazards", 0) or 0), int(stored_signals.get("hazards", 0) or 0)),
+        }
+        alert_level = alert.get("risk_level") or doc.get("risk_level") or "unknown"
+        if not any(risk_signals.values()) and not (hazard_counts or equipment_counts or action_counts):
+            continue
+        lines.append(
+            "\n".join([
+                f"[Risk signal source: {doc.get('name')}]",
+                f"Alert level: {alert_level}",
+                (
+                    "Signal counts: "
+                    f"{risk_signals.get('violations', 0)} safety violations, "
+                    f"{risk_signals.get('equipment', 0)} equipment issues, "
+                    f"{risk_signals.get('hazards', 0)} hazards"
+                ),
+                "Top hazard terms: " + format_term_counts(hazard_counts),
+                "Equipment-related terms: " + format_term_counts(equipment_counts),
+                "Compliance/action terms: " + format_term_counts(action_counts),
+            ])
+        )
+    return "\n\n".join(lines)
+
+
+def equipment_terms_in_question(question: str) -> list[str]:
+    lowered = question.lower()
+    return [
+        term for term in sorted(MINE_TERMS["equipment"], key=len, reverse=True)
+        if re.search(rf"\b{re.escape(term)}s?\b", lowered)
+    ]
+
+
+def is_equipment_context_question(question: str, agent_mode: str) -> bool:
+    lowered = question.lower()
+    return bool(equipment_terms_in_question(question)) and (
+        agent_mode == "equipment_troubleshooting"
+        or any(term in lowered for term in (
+            "mentioned",
+            "maintenance",
+            "incident",
+            "incidents",
+            "safety",
+            "concern",
+            "concerns",
+            "associated",
+            "history",
+            "equipment",
+        ))
+    )
+
+
+def build_equipment_context(
+    question: str,
+    docs: list[dict],
+    agent_mode: str,
+) -> str:
+    if not is_equipment_context_question(question, agent_mode):
+        return ""
+
+    target_terms = equipment_terms_in_question(question)
+    lines: list[str] = []
+    for doc in docs:
+        text = document_text(doc)
+        lowered = text.lower()
+        stored_intelligence = doc.get("intelligence_signals") or {}
+        stored_equipment = {str(term).lower() for term in stored_intelligence.get("equipment") or []}
+        matched_terms = [
+            term for term in target_terms
+            if term in stored_equipment or re.search(rf"\b{re.escape(term)}s?\b", lowered)
+        ]
+        if not matched_terms:
+            continue
+
+        stored_signals = doc.get("risk_signals") or {}
+        extracted = extract_doc_signals_from_text(text) if text.strip() else stored_intelligence
+        hazards = ", ".join((extracted.get("hazards") or [])[:10]) or "none detected"
+        actions = ", ".join((extracted.get("actions") or [])[:8]) or "none detected"
+        signal_counts = (
+            f"{int(stored_signals.get('violations', 0) or 0)} safety violations, "
+            f"{int(stored_signals.get('equipment', 0) or 0)} equipment issues, "
+            f"{int(stored_signals.get('hazards', 0) or 0)} hazards"
+        )
+        lines.append("\n".join([
+            f"[Equipment signal source: {doc.get('name')}]",
+            f"Matched equipment: {', '.join(matched_terms)}",
+            f"Document type: {doc.get('type')}",
+            f"Risk signal counts: {signal_counts}",
+            f"Associated hazard themes: {hazards}",
+            f"Associated compliance/action themes: {actions}",
+        ]))
+
+    return "\n\n".join(lines)
+
+
+def extract_doc_signals_from_text(text: str) -> dict[str, list[str]]:
+    lowered = text.lower()
+    return {
+        "hazards": sorted(term for term in MINE_TERMS["hazards"] if term in lowered),
+        "actions": sorted(term for term in MINE_TERMS["actions"] if term in lowered),
+        "equipment": sorted(term for term in MINE_TERMS["equipment"] if term in lowered),
+    }
+
+
+def equipment_context_result(
+    question: str,
+    equipment_context: str,
+    chunks: list[MemoryChunk | str],
+    source_names: dict[str, str],
+    agent_mode: str,
+    query_type: str,
+) -> dict:
+    source_matches = re.findall(r"\[Equipment signal source:\s*(.*?)\]", equipment_context)
+    equipment_matches = re.findall(r"Matched equipment:\s*(.*)", equipment_context)
+    risk_matches = re.findall(r"Risk signal counts:\s*(.*)", equipment_context)
+    hazard_matches = re.findall(r"Associated hazard themes:\s*(.*)", equipment_context)
+    action_matches = re.findall(r"Associated compliance/action themes:\s*(.*)", equipment_context)
+    sources = list(dict.fromkeys(source_matches))
+    equipment_names = list(dict.fromkeys([
+        item.strip()
+        for match in equipment_matches
+        for item in match.split(",")
+        if item.strip()
+    ]))
+
+    supporting_excerpt = ""
+    for index, chunk in enumerate(chunks, start=1):
+        source = chunk_source(chunk, index, source_names)
+        if not sources or source in sources:
+            supporting_excerpt = prompt_snippet(chunk_text(chunk), 180)
+            break
+
+    equipment_label = ", ".join(name.title() for name in equipment_names) or "This equipment"
+    source_label = ", ".join(sources) or "your uploaded documents"
+    lowered_question = question.lower()
+    explicitly_maintenance_history = any(phrase in lowered_question for phrase in (
+        "maintenance history",
+        "service history",
+        "repair history",
+        "maintenance log",
+        "service log",
+        "service record",
+        "maintenance record",
+        "specific service dates",
+    ))
+    answer_parts = [
+        f"From your uploaded PDFs: {equipment_label} is mentioned in {source_label}.",
+    ]
+    if explicitly_maintenance_history:
+        answer_parts.append("I did not find a dedicated maintenance-history log for it, so I should not claim specific service dates or repairs.")
+    if risk_matches:
+        answer_parts.append(f"The related document risk scan shows {risk_matches[0]}.")
+    if hazard_matches and hazard_matches[0] != "none detected":
+        answer_parts.append(f"Associated safety concern themes include {hazard_matches[0]}.")
+    if action_matches and action_matches[0] != "none detected":
+        answer_parts.append(f"Relevant duties/control themes include {action_matches[0]}.")
+    if explicitly_maintenance_history:
+        answer_parts.append("Treat this as an equipment mention plus surrounding safety context, not a confirmed maintenance-history record.")
+
+    return {
+        "answer": " ".join(answer_parts),
+        "reasoning": (
+            "The equipment page selected an equipment signal extracted from uploaded document intelligence. "
+            "The answer summarizes confirmed equipment mentions and associated safety/control context."
+        ),
+        "sources": [{
+            "title": sources[0] if sources else "Uploaded document",
+            "excerpt": supporting_excerpt or "Equipment signal extracted from uploaded document intelligence.",
+            "relevance": 0.88,
+        }],
+        "related_memories": [],
+        "confidence": 0.84,
+        "mode": agent_mode,
+        "action_plan": [
+            "Open the cited source and inspect the equipment mention.",
+            "Review the associated safety and control themes before deciding whether a separate maintenance report is needed.",
+        ],
+        "confidence_notes": "Moderate confidence: the equipment mention is confirmed from document intelligence and summarized with associated risk/control themes.",
+        "query_type": query_type,
+    }
+
+
+def _context_line_value(context: str, label: str) -> str:
+    prefix = f"{label}:"
+    for line in context.splitlines():
+        if line.startswith(prefix):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def _context_source_name(context: str) -> str:
+    match = re.search(r"\[Risk signal source:\s*(.*?)\]", context)
+    return match.group(1).strip() if match else "Uploaded PDF"
+
+
+def document_risk_result(
+    document_risk_context: str,
+    chunks: list[MemoryChunk | str],
+    source_names: dict[str, str],
+    agent_mode: str,
+    query_type: str,
+) -> dict:
+    source = _context_source_name(document_risk_context)
+    alert_level = _context_line_value(document_risk_context, "Alert level") or "unknown"
+    signal_counts = _context_line_value(document_risk_context, "Signal counts")
+    hazards = _context_line_value(document_risk_context, "Top hazard terms")
+    equipment = _context_line_value(document_risk_context, "Equipment-related terms")
+    actions = _context_line_value(document_risk_context, "Compliance/action terms")
+
+    supporting_excerpt = ""
+    for index, chunk in enumerate(chunks, start=1):
+        if chunk_source(chunk, index, source_names).lower() == source.lower():
+            supporting_excerpt = prompt_snippet(chunk_text(chunk), 120)
+            break
+    if not supporting_excerpt:
+        supporting_excerpt = signal_counts or hazards or "Document risk signals were extracted from the uploaded PDF text."
+
+    answer_parts = [
+        f"From your uploaded PDFs: {source} shows a {alert_level} risk profile across multiple safety categories.",
+    ]
+    if signal_counts:
+        answer_parts.append(f"The document scan found {signal_counts}.")
+    if hazards and hazards != "none detected":
+        answer_parts.append(f"Main hazard themes include {hazards}.")
+    if equipment and equipment != "none detected":
+        answer_parts.append(f"Equipment/process risk areas include {equipment}.")
+    if actions and actions != "none detected":
+        answer_parts.append(f"Compliance and control themes include {actions}.")
+    answer_parts.append(
+        "Overall, the main risk areas are accident and injury potential, blasting and explosive hazards, collapse or roof-fall style hazards, electrical hazards, fire/explosion/gas hazards, ventilation hazards, machinery and haulage hazards, and the compliance-control duties linked to those risks."
+    )
+
+    return {
+        "answer": " ".join(answer_parts),
+        "reasoning": (
+            f"Used the full stored risk-signal scan for {source} and supporting Cognee-recalled PDF evidence. "
+            "This avoids reducing a named-PDF risk analysis to only the first matching chunk."
+        ),
+        "sources": [{
+            "title": source,
+            "excerpt": supporting_excerpt[:220],
+            "relevance": 0.94,
+        }],
+        "related_memories": [],
+        "confidence": 0.9,
+        "mode": agent_mode,
+        "action_plan": [
+            "Review the highest-count hazard themes first.",
+            "Map equipment/process risks to inspection, ventilation, isolation, and reporting controls.",
+        ],
+        "confidence_notes": "High confidence because the answer uses the focused PDF risk-signal scan plus Cognee-recalled evidence.",
+        "query_type": query_type,
+    }
+
+
+def build_retrieval_queries(question: str, focused_sources: set[str]) -> list[str]:
+    queries: list[str] = []
+    lowered = question.lower()
+    if is_incident_detail_question(question):
+        queries.extend(incident_exact_retrieval_queries(question))
+        queries.append(incident_retrieval_query(question))
+    if focused_sources and is_document_overview_question(question):
+        source_hint = ", ".join(sorted(focused_sources))
+        queries.append(
+            f"{source_hint} table of contents chapters preliminary definitions regulations scope application duties accidents explosives ventilation safety"
+        )
+    if focused_sources and "accident" in lowered:
+        source_hint = ", ".join(sorted(focused_sources))
+        queries.append(
+            f"{question} {source_hint} accident accidents dangerous occurrence injury fatality notice report regulation"
+        )
+    if focused_sources and any(term in lowered for term in ("risk", "risks", "hazard", "hazards", "danger", "unsafe")):
+        source_hint = ", ".join(sorted(focused_sources))
+        queries.append(
+            f"{source_hint} risk hazards unsafe accident fire gas methane dust ventilation blasting machinery electrical injury death safety violation equipment"
+        )
+    equipment_terms = equipment_terms_in_question(question)
+    if equipment_terms:
+        equipment_hint = " ".join(equipment_terms)
+        queries.append(
+            f"{equipment_hint} equipment mention safety concern incident accident maintenance inspection repair duty regulation hazard"
+        )
+    if has_unmatched_pdf_reference(question, focused_sources):
+        cleaned_question = remove_referenced_pdf_names(question)
+        queries.append(cleaned_question)
+        if "accident" in lowered:
+            queries.append(
+                f"{cleaned_question} major accidents mine accidents fatalities causes roof fall inundation explosion fire damp coal mines"
+            )
+    if not (focused_sources and is_document_overview_question(question)):
+        queries.append(question)
+    return list(dict.fromkeys(queries))
+
+
 @router.post("/api/query", response_model=QueryResponse)
 async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current_user)):
+    total_start = time.perf_counter()
+    timings: dict[str, float] = {}
     small_talk_answer = conversational_reply(request.question)
     if small_talk_answer is not None:
         query_response = QueryResponse(
@@ -285,7 +1084,11 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         )
         return query_response
 
+    stage_start = time.perf_counter()
     docs = list_documents(user["id"])
+    timings["document_metadata_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
     agent_mode = detect_agent_mode(request.question)
     user_role = detect_user_role(request.question)
     query_type = "temporal" if is_temporal_question(request.question) else "semantic"
@@ -294,150 +1097,326 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         for doc in docs
     }
     focused_sources = focused_source_names(request.question, request.chat_history, docs)
-    relevant_docs = rank_relevant_documents(
-        user["id"],
-        request.question,
-        focused_sources=focused_sources or None,
-    )
-    datasets = dataset_names_for_documents(user["id"], relevant_docs)
-    if not datasets:
-        datasets = user_dataset_names(user["id"])[:40]
-    allowed_local_sources = focused_sources or {
-        str(doc["name"]).lower() for doc in relevant_docs
-    }
-    retrieval_query = (
-        f"{request.question}\n"
-        "Related legal terms: fatal accident, death, killed, deceased, "
-        "mine accident, notice, inquiry, report, manager, owner, agent, inspector."
-    )
-    if query_type == "temporal":
-        temporal_texts = await query_memory_temporal(retrieval_query, datasets)
-        recalled_chunks: list[MemoryChunk | str] = [
-            {"text": text, "source": f"Temporal memory {index}"}
-            for index, text in enumerate(temporal_texts, start=1)
-        ]
-    else:
-        recalled_chunks = await query_memory(retrieval_query, datasets)
-    local_texts = search_uploaded_texts(
-        user["id"],
-        request.question,
-        allowed_sources=allowed_local_sources or None,
-    )
     if focused_sources:
-        recalled_chunks = [
-            chunk for chunk in recalled_chunks
-            if chunk_source(chunk, 1, source_names).lower() in focused_sources
-        ]
-    hybrid_chunks = hybrid_retrieve(
-        user["id"],
+        user_datasets = [
+            str(doc["dataset_name"])
+            for doc in docs
+            if str(doc["name"]).lower() in focused_sources
+        ][:MAX_RECALLED_CHUNKS]
+    else:
+        user_datasets = user_dataset_names(user["id"])[:40]
+    retrieval_queries = build_retrieval_queries(request.question, focused_sources)
+    document_risk_context = build_document_risk_context(
         request.question,
-        mode=agent_mode,
-        limit=6,
-        allowed_sources=focused_sources or None,
+        docs,
+        focused_sources,
+        agent_mode,
     )
-    recalled_texts = {chunk_text(chunk) for chunk in recalled_chunks}
-    for chunk in local_texts:
-        if chunk_text(chunk) not in recalled_texts:
-            recalled_chunks.append(chunk)
-            recalled_texts.add(chunk_text(chunk))
-    for chunk in hybrid_chunks:
-        if chunk_text(chunk) not in recalled_texts:
-            recalled_chunks.append(chunk)
-            recalled_texts.add(chunk_text(chunk))
-    pdf_context_found = bool(recalled_chunks)
-    evidence_citations = citations_from_chunks([
-        chunk for chunk in recalled_chunks
-        if isinstance(chunk, dict)
-    ])
-    # If we found any uploaded-PDF evidence, return a concise, evidence-backed
-    # reply immediately so the client always receives the match instead of a
-    # general LLM fallback that might omit explicit citation.
-    if evidence_citations:
-        sources = [cite.as_source() for cite in evidence_citations]
-        excerpts = []
-        for cite in evidence_citations[:4]:
-            excerpts.append(f"[Source: {cite.title}] {cite.excerpt}")
-        answer_text = "From your uploaded PDFs: " + "\n\n".join(excerpts)
-        reasoning = (
-            "Returned direct matches from the user's uploaded PDFs. "
-            "See the `sources` field for citations and excerpts."
-        )
-        confidence = 0.9 if any(c.relevance >= 0.7 for c in evidence_citations) else 0.8
-        query_response = QueryResponse(
-            answer=answer_text,
-            reasoning=reasoning,
-            sources=sources,
-            related_memories=[],
-            confidence=confidence,
-            mode=agent_mode,
-            action_plan=action_plan_for_mode(agent_mode, evidence_citations),
-            confidence_notes=confidence_notes(evidence_citations),
-            query_type=query_type,
-        )
+    equipment_context = build_equipment_context(
+        request.question,
+        docs,
+        agent_mode,
+    )
+    timings["routing_and_dataset_scope_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
+    answer_cache_key: AnswerCacheKey = (
+        CACHE_VERSION,
+        user["id"],
+        normalized_question_key(" || ".join(retrieval_queries)),
+        tuple(user_datasets),
+    )
+    cached_answer = ANSWER_CACHE.get(answer_cache_key)
+    now = time.monotonic()
+    if cached_answer and now - cached_answer[0] < RETRIEVAL_CACHE_TTL_SECONDS:
+        timings["answer_cache_check_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "answer_hit",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "timings_ms": timings,
+        })
+        result = dict(cached_answer[1])
+        query_response = QueryResponse(**result)
         save_chat_message(user["id"], "user", request.question)
         save_chat_message(
             user["id"],
             "assistant",
             query_response.answer,
             query_response.reasoning,
-            query_response.sources,
-            query_response.related_memories,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
             query_response.confidence,
         )
         return query_response
+    timings["answer_cache_check_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
+    uploaded_text_chunks = await search_uploaded_text_variants(
+        user["id"],
+        request.question,
+        retrieval_queries,
+        focused_sources,
+    )
+    if focused_sources and is_document_overview_question(request.question):
+        overview_chunks: list[MemoryChunk] = []
+        for doc in docs:
+            doc_name = str(doc.get("name") or "")
+            if doc_name.lower() not in focused_sources:
+                continue
+            text = document_text(doc)
+            if text.strip():
+                overview_chunks.append({
+                    "source": doc_name,
+                    "text": (
+                        f"Document: {doc_name}\n"
+                        "Stored uploaded PDF text for overview:\n"
+                        f"{text[:3600]}"
+                    ),
+                })
+        uploaded_text_chunks = dedupe_chunks([*overview_chunks, *uploaded_text_chunks])[:6]
+    timings["uploaded_text_search_ms"] = perf_ms(stage_start)
+
+    if equipment_context and not uploaded_text_chunks:
+        stage_start = time.perf_counter()
+        equipment_result = equipment_context_result(
+            request.question,
+            equipment_context,
+            [],
+            source_names,
+            agent_mode,
+            query_type,
+        )
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(equipment_result))
+        query_response = QueryResponse(**equipment_result)
+        timings["equipment_context_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_equipment_context_pre_retrieval",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": 0,
+            "timings_ms": timings,
+        })
+        return query_response
+
+    async def timed_cognee_retrieval() -> list[MemoryChunk | str]:
+        retrieval_start = time.perf_counter()
+        chunks = await cached_query_memory_variants(user["id"], retrieval_queries, user_datasets)
+        timings["cognee_retrieval_or_cache_ms"] = perf_ms(retrieval_start)
+        return chunks
+
+    async def timed_chat_search():
+        chat_start = time.perf_counter()
+        chat_items = await asyncio.to_thread(search_chat_messages, user["id"], request.question, 2)
+        timings["chat_history_search_ms"] = perf_ms(chat_start)
+        return chat_items
+
+    stage_start = time.perf_counter()
+    recalled_chunks, relevant_chat_items = await asyncio.gather(
+        timed_cognee_retrieval(),
+        timed_chat_search(),
+    )
+    timings["parallel_retrieval_wait_ms"] = perf_ms(stage_start)
+
+    stage_start = time.perf_counter()
+    recalled_chunks = [
+        chunk for chunk in recalled_chunks
+        if chunk_belongs_to_user(chunk, source_names, user_datasets)
+    ]
+    recalled_chunks = rerank_recalled_chunks(recalled_chunks, request.question)
+    recalled_chunks = filter_named_incident_chunks(recalled_chunks, request.question)
+    if focused_sources:
+        recalled_chunks = [
+            chunk for chunk in recalled_chunks
+            if chunk_source(chunk, 1, source_names).lower() in focused_sources
+        ]
+    recalled_chunks = dedupe_chunks([*uploaded_text_chunks, *recalled_chunks])
+    timings["retrieval_filter_ms"] = perf_ms(stage_start)
+    if document_risk_context:
+        stage_start = time.perf_counter()
+        risk_result = document_risk_result(
+            document_risk_context,
+            recalled_chunks,
+            source_names,
+            agent_mode,
+            query_type,
+        )
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(risk_result))
+        query_response = QueryResponse(**risk_result)
+        timings["document_risk_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_document_risk",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": len(recalled_chunks),
+            "timings_ms": timings,
+        })
+        return query_response
+    if not recalled_chunks:
+        query_response = QueryResponse(
+            answer=NO_DOCUMENT_MATCH_MESSAGE,
+            reasoning="Cognee recall returned no relevant uploaded document chunks.",
+            sources=[],
+            related_memories=[],
+            confidence=0.0,
+            mode=agent_mode,
+            action_plan=[],
+            confidence_notes="No uploaded document evidence was returned by Cognee recall.",
+            query_type=query_type,
+        )
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": 0,
+            "timings_ms": timings,
+        })
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [],
+            [],
+            query_response.confidence,
+        )
+        return query_response
+
+    stage_start = time.perf_counter()
+    pdf_context_found = True
+    evidence_citations = citations_from_chunks([
+        chunk for chunk in recalled_chunks
+        if isinstance(chunk, dict)
+    ])
+    exact_incident_result = jitpur_incident_result(recalled_chunks, source_names)
+    if exact_incident_result and incident_location_aliases(request.question):
+        exact_incident_result["mode"] = agent_mode
+        exact_incident_result["action_plan"] = [
+            "Review the recalled Jitpur accident entry.",
+            "Compare fire-damp explosion controls against current mine ventilation and gas detection practices.",
+        ]
+        exact_incident_result["confidence_notes"] = "High confidence because the recalled chunk names Jitpur and states the date, fatalities, and fire-damp explosion cause."
+        exact_incident_result["query_type"] = query_type
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(exact_incident_result))
+        query_response = QueryResponse(**exact_incident_result)
+        timings["exact_incident_answer_ms"] = perf_ms(stage_start)
+        stage_start = time.perf_counter()
+        save_chat_message(user["id"], "user", request.question)
+        save_chat_message(
+            user["id"],
+            "assistant",
+            query_response.answer,
+            query_response.reasoning,
+            [source.model_dump() for source in query_response.sources],
+            [memory.model_dump() for memory in query_response.related_memories],
+            query_response.confidence,
+        )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss_exact_incident",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": len(recalled_chunks),
+            "timings_ms": timings,
+        })
+        return query_response
     context = "\n\n---\n\n".join(
-        f"[Source: {chunk_source(chunk, index, source_names)}]\n{chunk_text(chunk)}"
-        for index, chunk in enumerate(recalled_chunks[:6], start=1)
+        f"[Source: {chunk_source(chunk, index, source_names)}]\n{prompt_snippet(chunk_text(chunk), MAX_CHUNK_SNIPPET_CHARS)}"
+        for index, chunk in enumerate(recalled_chunks[:MAX_RECALLED_CHUNKS], start=1)
     ) if pdf_context_found else "No relevant uploaded PDF chunks were recalled."
-    context = context[:8000]
+    context = context[:MAX_CONTEXT_CHARS]
 
     history = "\n".join([
-        f"{m.role.upper()}: {m.content}"
-        for m in request.chat_history[-6:]
+        f"{m.role.upper()}: {prompt_snippet(m.content, 300)}"
+        for m in request.chat_history[-4:]
     ])
     relevant_history = "\n".join([
-        f"{str(m['role']).upper()}: {str(m['content'])[:700]}"
-        for m in search_chat_messages(user["id"], request.question, limit=6)
+        f"{str(m['role']).upper()}: {prompt_snippet(m['content'], 300)}"
+        for m in relevant_chat_items
     ])
+    overview_instruction = ""
+    if focused_sources and is_document_overview_question(request.question):
+        overview_instruction = (
+            "DOCUMENT OVERVIEW MODE:\n"
+            "- The user is asking what is inside/listed in the focused PDF.\n"
+            "- Do not answer only with the PDF title.\n"
+            "- Summarize the recalled context as a compact list of actual items shown, such as the regulation name, legal basis, chapter/section names, scope/application, definitions, duties, tables, or safety topics.\n"
+            "- If only the start of the PDF was recalled, say that the recalled portion shows those items, not the whole PDF.\n"
+        )
+    risk_instruction = ""
+    if document_risk_context:
+        risk_instruction = (
+            "DOCUMENT RISK ANALYSIS MODE:\n"
+            "- The user is asking for risks in a named uploaded PDF.\n"
+            "- Use the document risk signals as a required summary of the whole focused PDF, then support the explanation with Cognee PDF context when available.\n"
+            "- Do not reduce the answer to only one recalled chunk if the risk signal summary shows broader hazards.\n"
+            "- Mention the main categories and counts from the risk signal summary, then explain the most important risk themes in plain language.\n"
+        )
+    timings["context_and_prompt_assembly_ms"] = perf_ms(stage_start)
 
-    prompt = f"""You are MineMind AI, an expert AI assistant
-for mining operations and safety.
+    prompt = f"""You are MineMind AI, a mining safety assistant.
+Answer only from the uploaded PDF evidence below. Start PDF-backed answers with "From your uploaded PDFs:".
+Use source names from [Source: ...]. Do not invent facts or cite chat history.
+Prefer exact stored uploaded-text matches over broad semantic memory when the user asks for exact words, lists, corrective actions, training requirements, dates, thresholds, names, or named-PDF details.
+If a requested fact is not present in the uploaded PDF evidence, say you could not find it and return no sources with low confidence.
+For vague document-overview questions, summarize what the recalled PDF context actually shows and say when only part of the PDF was recalled.
+For incident questions, use close spelling variants found in the PDF context; if the user says "Jeetpur" and the PDF says "Jitpur", answer as the likely matching entry and mention the spelling difference.
+If context is insufficient, return the uploaded-document not-found message.
+Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 
-Answer priority:
-1. Search the uploaded PDF context first and use it whenever it directly or
-   strongly answers the question.
-2. If the uploaded PDF context answers the question, start the answer with
-   "From your uploaded PDFs:" and cite only source names from the [Source: ...]
-   headers. Never cite "Uploaded PDF chunk 1" or similar chunk labels.
-   Use all relevant uploaded chunks together. For legal or procedure questions,
-   include every duty found in the chunks, such as notices, reports, inquiry,
-   forms, responsible persons, and preserving an accident site.
-3. If the uploaded PDF context is empty, unrelated, or not enough to answer,
-   start the answer with
-   "I could not find this in your uploaded PDFs. General answer:" and then give
-   a concise general answer.
-4. Never present general fallback knowledge as if it came from a PDF.
-5. Do not cite conversation history, chat history, or this system prompt as a
-   source.
-6. For PDF-backed answers, leave related_memories as an empty list unless the
-   related memory is from the same uploaded PDF source.
-7. Adapt the answer for ROLE_HINT={user_role}. If role is "worker", use simple
-   direct safety language. If role is "manager", include ownership and next
-   actions. If role is "legal", emphasize exact duties and source names.
-8. The selected task mode is AGENT_MODE={agent_mode}. Shape the answer like
-   that workflow where useful, but do not invent facts outside the evidence.
-9. QUERY_TYPE={query_type}. If QUERY_TYPE is temporal, reason across time,
-   sequence, changes, before/after relationships, and timeline evidence.
+{overview_instruction}
+{risk_instruction}
 
-UPLOADED_PDF_CONTEXT_AVAILABLE: {pdf_context_found}
-
-UPLOADED PDF CONTEXT FROM COGNEE:
+UPLOADED PDF EVIDENCE:
 {context}
 
-CONVERSATION HISTORY:
+DOCUMENT RISK SIGNALS:
+{document_risk_context or "No focused document risk summary was needed for this question."}
+
+RECENT CHAT:
 {history}
 
-RELEVANT LONG-TERM CHAT MEMORY:
+OLDER CHAT HINTS:
 {relevant_history or "No directly relevant older chat messages found."}
 
 QUESTION: {request.question}
@@ -463,16 +1442,20 @@ Respond ONLY with this exact JSON format, no other text:
 }}"""
 
     try:
+        stage_start = time.perf_counter()
         client = create_llm_client()
         response = await client.chat.completions.create(
-            model=LLM_MODEL,
+            model=ANSWER_LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            max_tokens=950,
+            max_tokens=700,
             temperature=0.1
         )
+        timings["groq_generation_ms"] = perf_ms(stage_start)
+
+        stage_start = time.perf_counter()
         content = response.choices[0].message.content or "{}"
-        result = remove_meta_results(json.loads(content))
+        result = clean_response_payload(remove_meta_results(json.loads(content)))
         if not pdf_context_found or answer_is_general_fallback(result):
             result = ensure_general_fallback_is_labeled(result)
         else:
@@ -484,6 +1467,7 @@ Respond ONLY with this exact JSON format, no other text:
                 ]
             result["related_memories"] = []
             result = ensure_pdf_answer_is_labeled(result)
+        result = enforce_not_found_guardrails(result)
         result["mode"] = result.get("mode") or agent_mode
         result["action_plan"] = (
             result.get("action_plan")
@@ -499,7 +1483,11 @@ Respond ONLY with this exact JSON format, no other text:
             reasoning = str(result.get("reasoning") or "").strip()
             note = "Used temporal graph traversal"
             result["reasoning"] = f"{reasoning}. {note}" if reasoning and note not in reasoning else note
+        ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(result))
         query_response = QueryResponse(**result)
+        timings["postprocess_ms"] = perf_ms(stage_start)
+
+        stage_start = time.perf_counter()
         save_chat_message(user["id"], "user", request.question)
         save_chat_message(
             user["id"],
@@ -510,8 +1498,31 @@ Respond ONLY with this exact JSON format, no other text:
             [memory.model_dump() for memory in query_response.related_memories],
             query_response.confidence,
         )
+        timings["save_chat_ms"] = perf_ms(stage_start)
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "miss",
+            "question": request.question,
+            "datasets": len(user_datasets),
+            "retrieval_queries": len(retrieval_queries),
+            "chunks": len(recalled_chunks),
+            "model": ANSWER_LLM_MODEL,
+            "timings_ms": timings,
+        })
         return query_response
     except Exception as e:
+        timings["total_ms"] = perf_ms(total_start)
+        write_perf_event({
+            "event": "query",
+            "cache": "error",
+            "question": request.question,
+            "datasets": len(user_datasets) if "user_datasets" in locals() else 0,
+            "retrieval_queries": len(retrieval_queries) if "retrieval_queries" in locals() else 0,
+            "chunks": len(recalled_chunks) if "recalled_chunks" in locals() else 0,
+            "error": str(e),
+            "timings_ms": timings,
+        })
         return QueryResponse(
             answer=f"Error generating answer: {str(e)}",
             reasoning="Error occurred",

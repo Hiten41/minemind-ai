@@ -1,8 +1,7 @@
 import re
-import sqlite3
 from pathlib import Path
 
-from services.auth_service import DB_PATH, list_documents
+from services.auth_service import _connect, list_documents
 from services.settings import STORAGE_ROOT
 
 
@@ -241,11 +240,12 @@ def repair_document_node_counts(user_id: str) -> None:
     if not updates:
         return
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.executemany(
-            "UPDATE documents SET node_count = ? WHERE id = ?",
-            updates,
-        )
+    with _connect() as conn:
+        for node_count, doc_id in updates:
+            conn.execute(
+                "UPDATE documents SET node_count = %s WHERE id = %s",
+                (node_count, doc_id),
+            )
 
 
 def _label_from_chunk(chunk: str, fallback: str) -> str:

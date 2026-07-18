@@ -153,8 +153,8 @@ export default function IncidentsPage() {
     >
       <PremiumNav />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:112px_112px] opacity-30" />
-      <div className="pointer-events-none absolute right-[8%] top-[18%] h-[420px] w-[420px] rounded-full bg-[#8fb8d8]/[0.07] blur-3xl" />
-      <div className="pointer-events-none absolute left-[8%] bottom-[8%] h-[360px] w-[360px] rounded-full bg-white/[0.04] blur-3xl" />
+      <div className="pointer-events-none absolute right-[8%] top-[18%] h-[min(420px,82vw)] w-[min(420px,82vw)] rounded-full bg-[#8fb8d8]/[0.07] blur-3xl" />
+      <div className="pointer-events-none absolute left-[8%] bottom-[8%] h-[min(360px,78vw)] w-[min(360px,78vw)] rounded-full bg-white/[0.04] blur-3xl" />
 
       <div className="relative z-10 mx-auto max-w-7xl">
         <motion.header variants={itemVariants} className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
@@ -205,7 +205,7 @@ export default function IncidentsPage() {
                       whileHover={{ y: -5 }}
                       whileTap={{ scale: 0.985 }}
                       onClick={() => setSelectedCase(item)}
-                      className={`group relative overflow-hidden rounded-[30px] border p-5 text-left shadow-[0_24px_90px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-2xl transition duration-300 ${
+                      className={`group relative min-w-0 overflow-hidden rounded-[30px] border p-5 text-left shadow-[0_24px_90px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-2xl transition duration-300 ${
                         selectedCase?.datasetName === item.datasetName
                           ? 'border-white/32 bg-white/[0.09]'
                           : 'border-white/10 bg-white/[0.045] hover:border-white/22 hover:bg-white/[0.07]'
@@ -221,7 +221,7 @@ export default function IncidentsPage() {
                         </span>
                       </div>
                       <p className="tracked-label mt-6 text-[9px] text-white/32">{item.id} - {item.date}</p>
-                      <h2 className="mt-3 line-clamp-2 min-h-[3.25rem] text-xl font-semibold leading-7 tracking-tight text-white/88">
+                      <h2 className="mt-3 line-clamp-2 min-h-[3.25rem] break-words text-xl font-semibold leading-7 tracking-tight text-white/88">
                         {item.title}
                       </h2>
                       <div className="mt-6 flex items-center justify-between gap-3 text-sm">
@@ -260,7 +260,7 @@ export default function IncidentsPage() {
                   <button
                     type="button"
                     onClick={() => router.push('/documents')}
-                    className="mt-7 inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/[0.08] px-5 py-3 text-sm font-medium text-white transition hover:border-white/26 hover:bg-white/[0.12] active:scale-95"
+                    className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/14 bg-white/[0.08] px-5 py-3 text-sm font-medium text-white transition hover:border-white/26 hover:bg-white/[0.12] active:scale-95"
                   >
                     Upload Incident Report
                     <ArrowRight className="h-4 w-4" strokeWidth={1.6} />
@@ -279,14 +279,14 @@ export default function IncidentsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="tracked-label text-[9px] text-white/32">{selectedCase.id}</p>
-                    <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-tight text-white">
+                    <h2 className="mt-3 break-words text-2xl font-semibold leading-tight tracking-tight text-white">
                       {selectedCase.title}
                     </h2>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedCase(null)}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.05] text-white/58 transition hover:bg-white/10 hover:text-white"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.05] text-white/58 transition hover:bg-white/10 hover:text-white"
                     aria-label="Close selected case"
                   >
                     <X className="h-4 w-4" strokeWidth={1.5} />
@@ -311,7 +311,7 @@ export default function IncidentsPage() {
                   <button
                     type="button"
                     onClick={() => router.push(`/chat?q=${encodeURIComponent(`Summarize this uploaded incident report and identify similar memories: ${selectedCase.title}`)}`)}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/14 bg-white/[0.08] px-4 py-3 text-sm font-medium text-white transition hover:border-white/26 hover:bg-white/[0.12] active:scale-[0.98]"
+                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/14 bg-white/[0.08] px-4 py-3 text-sm font-medium text-white transition hover:border-white/26 hover:bg-white/[0.12] active:scale-[0.98]"
                   >
                     <Layers3 className="h-4 w-4" strokeWidth={1.55} />
                     Ask About This Report
@@ -319,7 +319,7 @@ export default function IncidentsPage() {
                   <button
                     type="button"
                     onClick={() => router.push(`/chat?q=${encodeURIComponent(`Which DGMS regulations apply to this uploaded incident report: ${selectedCase.title}`)}`)}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-white/74 transition hover:border-white/24 hover:text-white active:scale-[0.98]"
+                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-white/74 transition hover:border-white/24 hover:text-white active:scale-[0.98]"
                   >
                     <ShieldCheck className="h-4 w-4" strokeWidth={1.55} />
                     Check DGMS Regulations
@@ -328,7 +328,7 @@ export default function IncidentsPage() {
                     type="button"
                     onPointerDown={() => router.push(`/chat?q=${encodeURIComponent(`Find similar incidents to ${selectedCase.title} and compare hazards, causes, and corrective actions`)}`)}
                     onClick={() => router.push(`/chat?q=${encodeURIComponent(`Find similar incidents to ${selectedCase.title} and compare hazards, causes, and corrective actions`)}`)}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-white/74 transition hover:border-white/24 hover:text-white active:scale-[0.98]"
+                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-white/74 transition hover:border-white/24 hover:text-white active:scale-[0.98]"
                   >
                     <ArrowRight className="h-4 w-4" strokeWidth={1.55} />
                     Find Similar Incidents

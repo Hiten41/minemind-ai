@@ -42,6 +42,20 @@ HAZARD_KEYWORDS = (
     "blasting",
 )
 
+INCIDENT_MARKERS = {
+    "accident",
+    "fatal",
+    "fatality",
+    "fatalities",
+    "explosion",
+    "inundation",
+    "roof fall",
+    "firedamp",
+    "fire damp",
+    "gas explosion",
+    "colliery",
+}
+
 MINE_TERMS = {
     "hazards": {
         "roof fall", "fall of roof", "inundation", "explosion", "fire", "gas",
@@ -54,8 +68,15 @@ MINE_TERMS = {
         "owner", "agent", "inspector", "form", "register", "maintenance",
     },
     "equipment": {
-        "pump", "conveyor", "drill", "ventilator", "fan", "loader", "dumper",
-        "rope", "winder", "cage", "machinery", "transformer", "switchgear",
+        "air compressor", "boiler", "cage", "compressor", "conveyor",
+        "diesel engine", "diesel loco", "drill", "dumper", "electrical installation",
+        "fan", "flameproof apparatus", "foundry", "gas engine", "gasoline engine",
+        "haulage", "hydraulic turbine", "loader", "locomotive", "machinery",
+        "main fan", "mechanical ventilator", "mineral dressing", "oil engine",
+        "pit cage", "pump", "pumping", "rope", "safety lamp", "self-rescuer",
+        "shaft", "smithy", "steam turbine", "switchgear", "transformer",
+        "ventilation fan", "ventilator", "water wheel", "winder", "winding",
+        "workshop",
     },
 }
 
@@ -135,6 +156,37 @@ def document_text(doc: dict[str, Any]) -> str:
         return path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return ""
+
+
+def classify_document_type(doc: dict[str, Any], text: str | None = None) -> str:
+    stored_type = str(doc.get("type") or "regulation").lower()
+    if stored_type == "incident":
+        return stored_type
+
+    name = str(doc.get("name") or "").lower()
+    readable_text = text if text is not None else document_text(doc)
+    sample = readable_text.lower()[:50000]
+
+    if "accident" in name or "incident" in name:
+        return "incident"
+    accident_table_rows = len(
+        re.findall(
+            r"\|\s*(?:fire|gas|coal|roof|inundation|blasting|methane|explosion).{0,100}\|\s*\d+\s*fatal",
+            sample,
+        )
+    )
+    if accident_table_rows >= 2:
+        return "incident"
+    dated_entries = len(re.findall(r"\b\d{2}/\d{2}/\d{4}\b", sample))
+    marker_count = sum(marker in sample for marker in INCIDENT_MARKERS)
+    if dated_entries >= 5 and marker_count >= 4:
+        return "incident"
+
+    equipment_signals = extract_document_signals(readable_text).get("equipment", [])
+    if stored_type == "regulation" and len(equipment_signals) >= 8 and not any(term in sample for term in ("regulation", "rules", "act")):
+        return "manual"
+
+    return stored_type
 
 
 def detect_agent_mode(question: str) -> str:
@@ -328,12 +380,14 @@ def build_document_intelligence(user_id: str) -> dict[str, Any]:
     entity_counts: Counter[str] = Counter()
     for doc in list_documents(user_id):
         text = document_text(doc)
+        extracted = extract_document_signals(text) if text.strip() else {}
+        stored = doc.get("intelligence_signals") or {}
+        hazards = sorted(set(extracted.get("hazards") or []) | set(stored.get("hazards") or []))
+        actions = sorted(set(extracted.get("actions") or []) | set(stored.get("actions") or []))
+        equipment = sorted(set(extracted.get("equipment") or []) | set(stored.get("equipment") or []))
         lowered = text.lower()
-        hazards = sorted(term for term in MINE_TERMS["hazards"] if term in lowered)
-        actions = sorted(term for term in MINE_TERMS["actions"] if term in lowered)
-        equipment = sorted(term for term in MINE_TERMS["equipment"] if term in lowered)
         for term in hazards + actions + equipment:
-            entity_counts[term] += lowered.count(term)
+            entity_counts[term] += max(1, lowered.count(term))
         documents.append({
             "id": doc.get("id"),
             "name": doc.get("name"),
@@ -353,6 +407,15 @@ def build_document_intelligence(user_id: str) -> dict[str, Any]:
             {"name": name, "count": count}
             for name, count in entity_counts.most_common(15)
         ],
+    }
+
+
+def extract_document_signals(text: str) -> dict[str, list[str]]:
+    lowered = text.lower()
+    return {
+        "hazards": sorted(term for term in MINE_TERMS["hazards"] if term in lowered)[:12],
+        "actions": sorted(term for term in MINE_TERMS["actions"] if term in lowered)[:12],
+        "equipment": sorted(term for term in MINE_TERMS["equipment"] if term in lowered)[:12],
     }
 
 

@@ -6,7 +6,6 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
-import MemoryUploadRail from '@/components/experience/MemoryUploadRail'
 import PremiumNav from '@/components/experience/PremiumNav'
 import { getAlerts, getAnalytics } from '@/lib/api'
 import type { AnalyticsData, RiskAlert, RiskLevel } from '@/types'
@@ -222,9 +221,8 @@ export default function DashboardPage() {
   })()
 
   return (
-    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden pb-28 text-white md:h-screen md:min-h-[760px] md:overflow-hidden md:pb-0">
+    <main className="premium-bg noise-mask relative min-h-screen overflow-x-hidden pb-36 text-white xl:h-screen xl:min-h-[760px] xl:overflow-hidden xl:pb-0">
       <PremiumNav />
-      <MemoryUploadRail onUploadComplete={refreshDashboardData} />
 
       <motion.div
         animate={{
@@ -234,9 +232,9 @@ export default function DashboardPage() {
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.18)_42%,rgba(0,0,0,0.84)_100%)]"
       />
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[760px] w-[760px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#d7b779]/[0.055] blur-3xl" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[min(760px,110vw)] w-[min(760px,110vw)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#d7b779]/[0.055] blur-3xl" />
 
-      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pb-28 pt-[450px] md:fixed md:left-10 md:top-80 md:w-[min(360px,calc(100vw-40px))] md:pb-0 md:pt-0">
+      <section className="relative z-30 mx-auto w-[calc(100vw-1.5rem)] pb-28 pt-[760px] sm:pt-[720px] lg:pt-[620px] xl:fixed xl:left-10 xl:top-[min(34vh,320px)] xl:w-[min(360px,calc(100vw-40px))] xl:pb-0 xl:pt-0">
         <div className="glass-depth-subtle rounded-[26px] border border-white/10 bg-black/18 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -246,7 +244,7 @@ export default function DashboardPage() {
             <AlertTriangle className="h-5 w-5 text-[#d7b779]" strokeWidth={1.55} />
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 max-h-[min(380px,42vh)] space-y-3 overflow-auto pr-1 xl:max-h-[calc(100vh-390px)]">
             {alertsState === 'loading' ? (
               <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-3 py-4 text-sm text-white/52">
                 Loading risk signals...
@@ -275,7 +273,7 @@ export default function DashboardPage() {
                   type="button"
                   onPointerDown={() => router.push(`/chat?q=${encodeURIComponent(`Analyze the risks in ${alert.name}`)}`)}
                   onClick={() => router.push(`/chat?q=${encodeURIComponent(`Analyze the risks in ${alert.name}`)}`)}
-                  className="mt-3 flex items-center gap-1 text-xs font-medium text-white/72 transition hover:text-white"
+                  className="mt-3 flex min-h-11 items-center gap-1 text-xs font-medium text-white/72 transition hover:text-white"
                 >
                   Ask MineMind about this
                   <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.7} />
@@ -293,24 +291,24 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="absolute inset-x-0 top-0 z-10 flex min-h-[450px] flex-col items-center px-4 pb-12 pt-24 md:relative md:h-full md:min-h-0 md:justify-center md:px-8 md:pb-28">
+      <section className="absolute inset-x-0 top-0 z-10 flex min-h-[520px] flex-col items-center px-4 pb-12 pt-24 sm:min-h-[560px] lg:min-h-[590px] xl:relative xl:h-full xl:min-h-0 xl:justify-center xl:px-8 xl:pb-28">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute top-24 max-w-[calc(100vw-2rem)] rounded-[30px] bg-black/30 px-5 py-5 text-center shadow-[0_24px_110px_rgba(0,0,0,0.34)] backdrop-blur-[2px] md:top-[13vh] md:max-w-4xl md:px-7"
+          className="absolute top-24 max-w-[calc(100vw-2rem)] rounded-[30px] bg-black/30 px-4 py-5 text-center shadow-[0_24px_110px_rgba(0,0,0,0.34)] backdrop-blur-[2px] sm:px-5 xl:top-[13vh] xl:max-w-4xl xl:px-7"
         >
           <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-[#f59e0b]/20 bg-black/24 px-3 py-1.5 shadow-[0_0_44px_rgba(245,158,11,0.12)] backdrop-blur-xl md:gap-3 md:px-4 md:py-2">
             <img src="/logo.svg" alt="MineMind AI logo" className="h-7 w-7 rounded-xl md:h-8 md:w-8" />
             <span className="tracked-label text-[10px] text-[#f59e0b]/78 md:text-[11px]">MineMind AI</span>
           </div>
-          <h1 className="metal-text mx-auto mt-4 max-w-[360px] text-[2.35rem] font-bold leading-[1.05] tracking-tight sm:text-5xl md:max-w-3xl md:text-6xl">
+          <h1 className="metal-text mx-auto mt-4 max-w-[360px] text-[clamp(2rem,10vw,3.4rem)] font-bold leading-[1.05] tracking-tight sm:text-5xl md:max-w-3xl xl:text-6xl">
             Enterprise Knowledge Automation for Mining Operations
           </h1>
           <p className="mx-auto mt-4 max-w-[340px] text-[15px] leading-7 text-white/62 sm:text-base md:mt-5 md:max-w-md md:text-white/48">
             Consolidate regulations, manuals, and incident data into a secure, searchable intelligence network for your mining operation.
           </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-6 flex max-w-full flex-wrap items-center justify-center gap-3">
             <HeroMetric label="Documents Indexed" value={documentsLabel} />
             <HeroMetric label="Incident Reports" value={incidentsLabel} />
             <HeroMetric label="Knowledge Base" value="Uploaded documents" />
@@ -320,7 +318,7 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
               transition={{ delay: 0.65 }}
-              className="glass-depth-subtle inline-flex items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
+              className="glass-depth-subtle inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
             >
               <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
               Re-index Knowledge Base
@@ -337,7 +335,7 @@ export default function DashboardPage() {
             scale: isDraggingFile ? 0.96 : 1
           }}
           transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-none absolute left-1/2 top-[71%] h-[170px] w-[min(78vw,340px)] opacity-45 sm:h-[260px] sm:w-[min(82vw,500px)] md:top-[54%] md:h-[58vh] md:max-h-[590px] md:min-h-[420px] md:w-[min(78vw,880px)] md:opacity-100"
+          className="pointer-events-none absolute left-1/2 top-[74%] h-[150px] w-[min(78vw,340px)] opacity-45 sm:top-[71%] sm:h-[240px] sm:w-[min(82vw,500px)] xl:top-[54%] xl:h-[58vh] xl:max-h-[590px] xl:min-h-[420px] xl:w-[min(78vw,880px)] xl:opacity-100"
         >
           <motion.div
             initial={false}
@@ -378,7 +376,7 @@ export default function DashboardPage() {
           initial={{ x: '-50%', opacity: 0, y: 28, scale: 0.98 }}
           animate={{ x: '-50%', opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 88, damping: 20, delay: 0.28 }}
-          className="glass-depth amber-aura fixed bottom-5 left-1/2 z-40 w-[min(760px,calc(100vw-1.5rem))] rounded-[24px] p-2 md:bottom-[8vh] md:rounded-[28px]"
+          className="glass-depth amber-aura fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-40 w-[min(760px,calc(100vw-1.5rem))] rounded-[24px] p-2 sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] xl:bottom-[8vh] xl:rounded-[28px]"
         >
           <form
             className="flex items-center gap-2 sm:gap-3"
@@ -393,7 +391,7 @@ export default function DashboardPage() {
             <input
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask MineMind about incidents, regulations, or equipment history"
+              placeholder="Ask MineMind about your documents..."
               className="soft-focus-ring h-12 min-w-0 flex-1 bg-transparent px-2 text-sm text-white placeholder:text-white/34 sm:h-14 sm:px-0 sm:text-[15px]"
             />
             <button
@@ -418,7 +416,7 @@ export default function DashboardPage() {
           initial={{ x: '-50%', opacity: 0 }}
           animate={{ x: '-50%', opacity: 1 }}
           transition={{ delay: 0.9 }}
-          className="fixed bottom-1 left-1/2 z-30 hidden items-center gap-2 text-sm text-white/42 transition hover:text-white/80 active:scale-95 md:flex md:bottom-[2.8vh]"
+          className="fixed bottom-1 left-1/2 z-30 hidden items-center gap-2 text-sm text-white/42 transition hover:text-white/80 active:scale-95 xl:flex xl:bottom-[2.8vh]"
         >
           Manage uploaded files
           <UploadCloud className="h-4 w-4" strokeWidth={1.6} />

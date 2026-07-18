@@ -12,3 +12,4 @@ requests
 beautifulsoup4
 pydantic
 aiofiles
+psycopg2-binary

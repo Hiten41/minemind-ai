@@ -1,25 +1,48 @@
 from datetime import datetime
+import mimetypes
 import os
 import tempfile
 import uuid
+from pathlib import Path
 
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response
 
 from models.schemas import UploadResponse
 from services.auth_service import (
     current_user,
+    get_document_file_for_user,
     list_documents,
     list_documents_page,
     save_document,
+    update_document_type,
     update_document_ingest_status,
 )
 from services.cognee_service import ingest_document
-from services.advanced_ai import scan_text_for_risk_alert
+from services.advanced_ai import classify_document_type, extract_document_signals, scan_text_for_risk_alert
 from services.document_search import estimate_node_count, repair_document_node_counts, store_document_text
 from services.parser import parse_file
+from services.settings import STORAGE_ROOT
 
 router = APIRouter()
+USER_FILE_ROOT = STORAGE_ROOT / "user_files"
+
+
+def repair_document_types(user_id: str) -> None:
+    for doc in list_documents(user_id):
+        detected_type = classify_document_type(doc)
+        if detected_type != str(doc.get("type") or "").lower():
+            update_document_type(user_id, str(doc["id"]), detected_type)
+
+
+def store_original_file(user_id: str, doc_id: str, filename: str, content: bytes) -> str:
+    user_dir = USER_FILE_ROOT / user_id / doc_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    safe_filename = Path(filename or "document").name or "document"
+    file_path = user_dir / safe_filename
+    file_path.write_bytes(content)
+    return str(file_path)
 
 
 async def index_document_in_background(
@@ -65,10 +88,14 @@ async def upload_document(
             status_code=400,
             detail="No readable text found in this file. If it is scanned, OCR must be installed."
         )
-    dataset_name = f"user_{user['id'][:8]}_{doc_type}_{doc_id[:8]}"
+    detected_type = classify_document_type({"name": safe_name, "type": doc_type}, text)
+    dataset_name = f"user_{user['id'][:8]}_{detected_type}_{doc_id[:8]}"
     text_path = store_document_text(user["id"], doc_id, text)
+    file_path = store_original_file(user["id"], doc_id, safe_name, content)
+    file_mime_type = mimetypes.guess_type(safe_name)[0] or file.content_type or "application/octet-stream"
     node_count = estimate_node_count(text)
     risk_alert = scan_text_for_risk_alert(text)
+    intelligence_signals = extract_document_signals(text)
     status = "stored"
 
     if os.path.exists(tmp_path):
@@ -77,14 +104,18 @@ async def upload_document(
     doc = {
         "id": doc_id,
         "name": safe_name,
-        "type": doc_type,
+        "type": detected_type,
         "status": status,
         "node_count": node_count,
         "uploaded_at": datetime.now().isoformat(),
         "dataset_name": dataset_name,
         "text_path": text_path,
+        "file_path": file_path,
+        "file_content": content,
+        "file_mime_type": file_mime_type,
         "risk_signals": risk_alert["risk_signals"],
         "risk_level": risk_alert["risk_level"],
+        "intelligence_signals": intelligence_signals,
     }
     save_document(user["id"], doc)
     background_tasks.add_task(
@@ -101,6 +132,7 @@ async def upload_document(
 @router.get("/api/documents")
 async def get_documents(user: dict[str, str] = Depends(current_user)):
     repair_document_node_counts(user["id"])
+    repair_document_types(user["id"])
     return list_documents(user["id"])
 
 
@@ -112,4 +144,45 @@ async def get_documents_page(
     user: dict[str, str] = Depends(current_user),
 ):
     repair_document_node_counts(user["id"])
+    repair_document_types(user["id"])
     return list_documents_page(user["id"], limit=limit, offset=offset, doc_type=doc_type)
+
+
+@router.get("/api/documents/{doc_id}/file")
+async def get_document_file(
+    doc_id: str,
+    user: dict[str, str] = Depends(current_user),
+):
+    doc = get_document_file_for_user(user["id"], doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_content = doc.get("file_content")
+    if file_content:
+        content = bytes(file_content)
+        media_type = str(doc.get("file_mime_type") or "application/pdf")
+        filename = str(doc.get("name") or "document.pdf")
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+
+    file_path = doc.get("file_path")
+    if not file_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Original file is not available for this older upload. Please re-upload it to enable PDF preview.",
+        )
+
+    path = Path(str(file_path)).resolve()
+    allowed_root = (USER_FILE_ROOT / user["id"]).resolve()
+    if allowed_root not in path.parents or not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Original file is not available")
+
+    media_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=str(doc.get("name") or path.name),
+    )
