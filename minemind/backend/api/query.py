@@ -29,6 +29,7 @@ from services.auth_service import (
     user_dataset_names,
 )
 from services.cognee_service import query_memory
+from services.document_search import search_uploaded_texts
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -54,10 +55,10 @@ if APP_LLM_PROVIDER == "groq":
 router = APIRouter()
 MemoryChunk = dict[str, str]
 MAX_RECALLED_CHUNKS = 4
-MAX_CHUNK_SNIPPET_CHARS = 650
-MAX_CONTEXT_CHARS = 2800
+MAX_CHUNK_SNIPPET_CHARS = 1800
+MAX_CONTEXT_CHARS = 5200
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "equipment-context-v9"
+CACHE_VERSION = "pdf-grounding-v1"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -208,6 +209,43 @@ def answer_is_general_fallback(result: dict) -> bool:
     return answer.startswith("i could not find this in your uploaded pdfs")
 
 
+def answer_says_not_found(result: dict) -> bool:
+    answer = str(result.get("answer") or "").strip().lower()
+    reasoning = str(result.get("reasoning") or "").strip().lower()
+    haystack = f"{answer}\n{reasoning}"
+    return any(phrase in haystack for phrase in (
+        "could not find",
+        "couldn't find",
+        "did not find",
+        "no mention",
+        "not mention",
+        "does not mention",
+        "do not contain",
+        "doesn't contain",
+        "not in your uploaded",
+        "not found",
+    ))
+
+
+def enforce_not_found_guardrails(result: dict) -> dict:
+    if not answer_says_not_found(result):
+        return result
+    try:
+        confidence = float(result.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    result["sources"] = []
+    result["related_memories"] = []
+    result["action_plan"] = []
+    result["confidence"] = min(confidence, 0.25)
+    result["confidence_notes"] = (
+        "Low confidence because no uploaded-PDF evidence was found for this question."
+    )
+    if not str(result.get("answer") or "").lower().startswith("i could not find"):
+        result["answer"] = NO_DOCUMENT_MATCH_MESSAGE
+    return result
+
+
 def ensure_pdf_answer_is_labeled(result: dict) -> dict:
     answer = str(result.get("answer") or "").strip()
     if answer and not answer.lower().startswith("from your uploaded pdfs:"):
@@ -308,6 +346,48 @@ def dedupe_chunks(chunks: list[MemoryChunk | str]) -> list[MemoryChunk | str]:
         seen.add(key)
         unique.append(chunk)
     return unique
+
+
+def uploaded_text_queries(question: str, retrieval_queries: list[str]) -> list[str]:
+    lowered = question.lower()
+    queries = [question]
+    if any(term in lowered for term in (
+        "exact",
+        "phrase",
+        "words",
+        "list",
+        "according",
+        "what happened",
+        "corrective action",
+        "training",
+        "required",
+    )):
+        queries.extend(retrieval_queries)
+    return list(dict.fromkeys(query for query in queries if query.strip()))[:4]
+
+
+async def search_uploaded_text_variants(
+    user_id: str,
+    question: str,
+    retrieval_queries: list[str],
+    focused_sources: set[str],
+) -> list[MemoryChunk]:
+    queries = uploaded_text_queries(question, retrieval_queries)
+    results = await asyncio.gather(*[
+        asyncio.to_thread(
+            search_uploaded_texts,
+            user_id,
+            query,
+            3,
+            focused_sources or None,
+        )
+        for query in queries
+    ])
+    return dedupe_chunks([
+        chunk
+        for chunks in results
+        for chunk in chunks
+    ])[:6]
 
 
 async def cached_query_memory_variants(
@@ -1074,7 +1154,33 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         return query_response
     timings["answer_cache_check_ms"] = perf_ms(stage_start)
 
-    if equipment_context:
+    stage_start = time.perf_counter()
+    uploaded_text_chunks = await search_uploaded_text_variants(
+        user["id"],
+        request.question,
+        retrieval_queries,
+        focused_sources,
+    )
+    if focused_sources and is_document_overview_question(request.question):
+        overview_chunks: list[MemoryChunk] = []
+        for doc in docs:
+            doc_name = str(doc.get("name") or "")
+            if doc_name.lower() not in focused_sources:
+                continue
+            text = document_text(doc)
+            if text.strip():
+                overview_chunks.append({
+                    "source": doc_name,
+                    "text": (
+                        f"Document: {doc_name}\n"
+                        "Stored uploaded PDF text for overview:\n"
+                        f"{text[:3600]}"
+                    ),
+                })
+        uploaded_text_chunks = dedupe_chunks([*overview_chunks, *uploaded_text_chunks])[:6]
+    timings["uploaded_text_search_ms"] = perf_ms(stage_start)
+
+    if equipment_context and not uploaded_text_chunks:
         stage_start = time.perf_counter()
         equipment_result = equipment_context_result(
             request.question,
@@ -1142,6 +1248,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
             chunk for chunk in recalled_chunks
             if chunk_source(chunk, 1, source_names).lower() in focused_sources
         ]
+    recalled_chunks = dedupe_chunks([*uploaded_text_chunks, *recalled_chunks])
     timings["retrieval_filter_ms"] = perf_ms(stage_start)
     if document_risk_context:
         stage_start = time.perf_counter()
@@ -1288,8 +1395,10 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     timings["context_and_prompt_assembly_ms"] = perf_ms(stage_start)
 
     prompt = f"""You are MineMind AI, a mining safety assistant.
-Answer only from the uploaded PDF context below. Start PDF-backed answers with "From your uploaded PDFs:".
+Answer only from the uploaded PDF evidence below. Start PDF-backed answers with "From your uploaded PDFs:".
 Use source names from [Source: ...]. Do not invent facts or cite chat history.
+Prefer exact stored uploaded-text matches over broad semantic memory when the user asks for exact words, lists, corrective actions, training requirements, dates, thresholds, names, or named-PDF details.
+If a requested fact is not present in the uploaded PDF evidence, say you could not find it and return no sources with low confidence.
 For vague document-overview questions, summarize what the recalled PDF context actually shows and say when only part of the PDF was recalled.
 For incident questions, use close spelling variants found in the PDF context; if the user says "Jeetpur" and the PDF says "Jitpur", answer as the likely matching entry and mention the spelling difference.
 If context is insufficient, return the uploaded-document not-found message.
@@ -1298,7 +1407,7 @@ Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 {overview_instruction}
 {risk_instruction}
 
-COGNEE PDF CONTEXT:
+UPLOADED PDF EVIDENCE:
 {context}
 
 DOCUMENT RISK SIGNALS:
@@ -1358,6 +1467,7 @@ Respond ONLY with this exact JSON format, no other text:
                 ]
             result["related_memories"] = []
             result = ensure_pdf_answer_is_labeled(result)
+        result = enforce_not_found_guardrails(result)
         result["mode"] = result.get("mode") or agent_mode
         result["action_plan"] = (
             result.get("action_plan")
