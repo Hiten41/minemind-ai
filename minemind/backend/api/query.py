@@ -786,6 +786,70 @@ def build_document_risk_context(
     return "\n\n".join(lines)
 
 
+def overview_lines_from_text(text: str, limit: int = 10) -> list[str]:
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = " ".join(raw_line.strip().split())
+        if not line:
+            continue
+        lowered = line.lower()
+        if lowered.startswith("[pdf page") or lowered.startswith("document:") or lowered.startswith("dataset name:"):
+            continue
+        if line in lines:
+            continue
+        lines.append(line[:260])
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def document_overview_result(
+    docs: list[dict],
+    focused_sources: set[str],
+    agent_mode: str,
+    query_type: str,
+) -> dict | None:
+    focused_docs = [
+        doc for doc in docs
+        if str(doc.get("name", "")).lower() in focused_sources
+    ]
+    answer_parts: list[str] = []
+    source_items: list[dict] = []
+    for doc in focused_docs[:3]:
+        doc_name = str(doc.get("name") or "Uploaded document")
+        text = document_text(doc)
+        lines = overview_lines_from_text(text)
+        if not lines:
+            continue
+        answer_parts.append(
+            f"{doc_name} contains: "
+            + " ".join(f"{index}. {line}" for index, line in enumerate(lines, start=1))
+        )
+        source_items.append({
+            "title": doc_name,
+            "excerpt": " ".join(lines)[:220],
+            "relevance": 0.92,
+        })
+
+    if not answer_parts:
+        return None
+
+    return {
+        "answer": "From your uploaded PDFs: " + " ".join(answer_parts),
+        "reasoning": (
+            "Used stored extracted PDF text directly for a named-document overview, "
+            "so the answer lists concrete contents instead of a risk summary."
+        ),
+        "sources": source_items,
+        "related_memories": [],
+        "confidence": 0.88,
+        "mode": agent_mode,
+        "action_plan": ["Ask a more specific follow-up about any listed section."],
+        "confidence_notes": "High confidence because the overview is extracted directly from stored uploaded PDF text.",
+        "query_type": query_type,
+    }
+
+
 def equipment_terms_in_question(question: str) -> list[str]:
     lowered = question.lower()
     return [
@@ -1179,6 +1243,42 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
                 })
         uploaded_text_chunks = dedupe_chunks([*overview_chunks, *uploaded_text_chunks])[:6]
     timings["uploaded_text_search_ms"] = perf_ms(stage_start)
+
+    if focused_sources and is_document_overview_question(request.question):
+        stage_start = time.perf_counter()
+        overview_result = document_overview_result(
+            docs,
+            focused_sources,
+            agent_mode,
+            query_type,
+        )
+        if overview_result:
+            ANSWER_CACHE[answer_cache_key] = (time.monotonic(), dict(overview_result))
+            query_response = QueryResponse(**overview_result)
+            timings["document_overview_answer_ms"] = perf_ms(stage_start)
+            stage_start = time.perf_counter()
+            save_chat_message(user["id"], "user", request.question)
+            save_chat_message(
+                user["id"],
+                "assistant",
+                query_response.answer,
+                query_response.reasoning,
+                [source.model_dump() for source in query_response.sources],
+                [memory.model_dump() for memory in query_response.related_memories],
+                query_response.confidence,
+            )
+            timings["save_chat_ms"] = perf_ms(stage_start)
+            timings["total_ms"] = perf_ms(total_start)
+            write_perf_event({
+                "event": "query",
+                "cache": "miss_document_overview",
+                "question": request.question,
+                "datasets": len(user_datasets),
+                "retrieval_queries": len(retrieval_queries),
+                "chunks": len(uploaded_text_chunks),
+                "timings_ms": timings,
+            })
+            return query_response
 
     if equipment_context and not uploaded_text_chunks:
         stage_start = time.perf_counter()
