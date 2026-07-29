@@ -1149,7 +1149,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
         return query_response
 
     stage_start = time.perf_counter()
-    docs = list_documents(user["id"])
+    docs = list_documents(user["id"], include_text=True)
     timings["document_metadata_ms"] = perf_ms(stage_start)
 
     stage_start = time.perf_counter()
