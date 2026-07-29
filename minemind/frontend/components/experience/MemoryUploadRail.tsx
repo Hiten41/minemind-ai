@@ -14,7 +14,7 @@ export default function MemoryUploadRail({
   onUploadComplete?: (document: Document) => void
 }) {
   const [state, setState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
-  const [message, setMessage] = useState('Drop incident PDFs into MineMind Memory')
+  const [message, setMessage] = useState('Drop incident documents into MineMind Memory')
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -35,7 +35,7 @@ export default function MemoryUploadRail({
         onUploadComplete?.(doc)
         window.setTimeout(() => {
           setState('idle')
-          setMessage('Drop incident PDFs into MineMind Memory')
+          setMessage('Drop incident documents into MineMind Memory')
         }, 2600)
       } catch (error) {
         setState('error')

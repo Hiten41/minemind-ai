@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
 import PremiumNav from '@/components/experience/PremiumNav'
-import { getAlerts, getAnalytics } from '@/lib/api'
+import { getAlerts, getAnalytics, improveMemory, uploadDocument } from '@/lib/api'
 import type { AnalyticsData, RiskAlert, RiskLevel } from '@/types'
 
 const KnowledgeCrystal = dynamic(() => import('@/components/experience/KnowledgeCrystal'), {
@@ -103,6 +103,9 @@ export default function DashboardPage() {
   const [optimizePulse, setOptimizePulse] = useState(0)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [reindexPulseVisible, setReindexPulseVisible] = useState(false)
+  const [reindexState, setReindexState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [dashboardNotice, setDashboardNotice] = useState('')
+  const [dashboardNoticeTone, setDashboardNoticeTone] = useState<'neutral' | 'success' | 'error'>('neutral')
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
   const refreshDashboardData = useCallback(() => {
@@ -171,11 +174,25 @@ export default function DashboardPage() {
       if (dragDepth === 0) setIsDraggingFile(false)
     }
 
-    function handleDrop(event: DragEvent) {
+    async function handleDrop(event: DragEvent) {
       if (!hasFiles(event)) return
       event.preventDefault()
       dragDepth = 0
       setIsDraggingFile(false)
+      const file = event.dataTransfer?.files?.[0]
+      if (!file) return
+
+      setDashboardNotice(`Uploading ${file.name}...`)
+      setDashboardNoticeTone('neutral')
+      try {
+        await uploadDocument(file, 'incident')
+        setDashboardNotice(`${file.name} uploaded. Memory indexing is continuing in the background.`)
+        setDashboardNoticeTone('success')
+        refreshDashboardData()
+      } catch (error) {
+        setDashboardNotice(error instanceof Error ? error.message : 'Document upload failed')
+        setDashboardNoticeTone('error')
+      }
     }
 
     window.addEventListener('dragenter', handleDragEnter)
@@ -189,7 +206,7 @@ export default function DashboardPage() {
       window.removeEventListener('dragleave', handleDragLeave)
       window.removeEventListener('drop', handleDrop)
     }
-  }, [])
+  }, [refreshDashboardData])
 
   useEffect(() => {
     if (optimizePulse === 0) return
@@ -205,6 +222,29 @@ export default function DashboardPage() {
     const href = `/chat?q=${encodeURIComponent(trimmed)}`
     setPendingRoute(href)
     router.push(href)
+  }
+
+  async function reindexKnowledgeBase() {
+    if (reindexState === 'loading') return
+    setReindexState('loading')
+    setDashboardNotice('Re-indexing your knowledge base...')
+    setDashboardNoticeTone('neutral')
+    setOptimizePulse((current) => current + 1)
+
+    try {
+      const result = await improveMemory()
+      if (result.status !== 'success') {
+        throw new Error(result.message || 'Re-indexing failed')
+      }
+      setReindexState('success')
+      setDashboardNotice('Knowledge base re-indexed successfully.')
+      setDashboardNoticeTone('success')
+      refreshDashboardData()
+    } catch (error) {
+      setReindexState('error')
+      setDashboardNotice(error instanceof Error ? error.message : 'Knowledge base re-indexing failed')
+      setDashboardNoticeTone('error')
+    }
   }
 
   const documents = analytics?.total_documents ?? 0
@@ -314,16 +354,41 @@ export default function DashboardPage() {
             <HeroMetric label="Knowledge Base" value="Uploaded documents" />
             <motion.button
               type="button"
-              onClick={() => setOptimizePulse((current) => current + 1)}
+              onClick={reindexKnowledgeBase}
+              disabled={reindexState === 'loading'}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: isDraggingFile ? 0 : 1, y: 0 }}
               transition={{ delay: 0.65 }}
-              className="glass-depth-subtle inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86"
+              className="glass-depth-subtle inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-3 text-xs font-medium text-white/58 transition hover:text-white/86 disabled:cursor-wait disabled:opacity-60"
             >
-              <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
-              Re-index Knowledge Base
+              {reindexState === 'loading' ? (
+                <Loader2 className="h-4 w-4 animate-spin text-[#d7b779]" strokeWidth={1.5} />
+              ) : (
+                <Wand2 className="h-4 w-4 text-[#d7b779]" strokeWidth={1.5} />
+              )}
+              {reindexState === 'loading'
+                ? 'Re-indexing...'
+                : reindexState === 'success'
+                  ? 'Re-indexed'
+                  : reindexState === 'error'
+                    ? 'Try re-indexing again'
+                    : 'Re-index Knowledge Base'}
             </motion.button>
           </div>
+          {dashboardNotice ? (
+            <p
+              role="status"
+              className={`mx-auto mt-3 max-w-xl text-xs leading-5 ${
+                dashboardNoticeTone === 'error'
+                  ? 'text-red-200/80'
+                  : dashboardNoticeTone === 'success'
+                    ? 'text-emerald-200/80'
+                    : 'text-white/48'
+              }`}
+            >
+              {dashboardNotice}
+            </p>
+          ) : null}
         </motion.div>
 
         <motion.div

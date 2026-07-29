@@ -11,9 +11,14 @@ router = APIRouter()
 
 @router.get("/api/graph", response_model=GraphData)
 async def get_graph(user: dict[str, str] = Depends(current_user)):
-    data = await get_graph_data(user_dataset_names(user["id"]))
+    # The deterministic per-user graph is built from data MineMind already owns,
+    # so it should be the reliable, low-latency path. The remote Cognee graph is
+    # only needed as a fallback for legacy datasets that have no local document.
+    data = build_mining_knowledge_graph(user["id"])
     if not data.get("nodes"):
-        data = build_mining_knowledge_graph(user["id"])
+        dataset_names = user_dataset_names(user["id"])
+        if dataset_names:
+            data = await get_graph_data(dataset_names)
     if not data.get("nodes"):
         data = build_uploaded_text_graph(user["id"])
     return GraphData(**data)

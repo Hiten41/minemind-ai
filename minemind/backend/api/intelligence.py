@@ -38,14 +38,14 @@ async def run_agent(request: QueryRequest, user: dict[str, str] = Depends(curren
     citations = citations_from_chunks(chunks)
     if citations:
         answer = (
-            "From your uploaded PDFs: "
+            "From your uploaded documents: "
             f"I found evidence for `{mode}` in {len(citations)} passage(s). "
             "Use the action plan below and open the cited sources for details."
         )
         reasoning = "The agent selected passages by hybrid keyword and mining-domain signal scoring."
     else:
         answer = (
-            "I could not find this in your uploaded PDFs. General answer: "
+            "I could not find this in your uploaded documents. General answer: "
             f"No stored document evidence matched `{mode}` strongly enough yet."
         )
         reasoning = "No uploaded-document evidence was found for this agent mode."

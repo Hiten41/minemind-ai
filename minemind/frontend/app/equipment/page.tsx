@@ -10,7 +10,7 @@ import type { DocumentIntelligenceItem, GraphNode } from '@/types'
 
 function deriveStatus(text: string): Equipment['status'] {
   const lowered = text.toLowerCase()
-  if (/(offline|shutdown|out of service|failed)/.test(lowered)) return 'Offline'
+  if (/(offline|shutdown|out of service|failed|stopped|not operating)/.test(lowered)) return 'Offline'
   if (/(maintenance|service|repair|inspection)/.test(lowered)) return 'Maintenance'
   return 'Active'
 }
@@ -117,7 +117,7 @@ function graphWithTimeout() {
   return Promise.race([
     getGraphData(),
     new Promise<{ nodes: GraphNode[]; edges: [] }>((resolve) => {
-      window.setTimeout(() => resolve({ nodes: [], edges: [] }), 12000)
+      window.setTimeout(() => resolve({ nodes: [], edges: [] }), 4000)
     })
   ])
 }
@@ -170,20 +170,33 @@ export default function EquipmentPage() {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([graphWithTimeout(), getDocumentIntelligence()])
-      .then(([graph, intelligence]) => {
+    getDocumentIntelligence()
+      .then((intelligence) => {
         if (cancelled) return
-        const equipmentNodes = graph.nodes.filter((node) => node.type === 'equipment')
-        const nextItems = mergeEquipmentItems([
-          ...equipmentNodes.map(nodeToEquipment),
-          ...documentEquipmentItems(intelligence.documents)
-        ])
+        const nextItems = mergeEquipmentItems(documentEquipmentItems(intelligence.documents))
         setItems(nextItems)
         setSelectedEquipment((current) => {
           if (!current) return current
           return nextItems.find((item) => item.id === current.id) ?? null
         })
         setError('')
+
+        // The stored document intelligence is enough for the first useful render.
+        // Merge the optional knowledge graph later so a slow graph provider never
+        // leaves the entire Equipment page behind a loading state.
+        void graphWithTimeout()
+          .then((graph) => {
+            if (cancelled) return
+            const equipmentNodes = graph.nodes.filter((node) => node.type === 'equipment')
+            if (equipmentNodes.length === 0) return
+            setItems((current) => mergeEquipmentItems([
+              ...current,
+              ...equipmentNodes.map(nodeToEquipment)
+            ]))
+          })
+          .catch(() => {
+            // Document-derived equipment remains usable when graph enrichment fails.
+          })
       })
       .catch(() => {
         if (!cancelled) setError('Equipment data could not be loaded right now.')

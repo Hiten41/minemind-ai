@@ -191,7 +191,7 @@ def _best_windows(doc_name: str, text: str, terms: list[str], limit: int) -> lis
         chunk = "\n".join(lines[start:end])
         windows.append((
             score,
-            f"Document: {doc_name}\nMatched uploaded PDF text:\n{chunk[:1800]}"
+            f"Document: {doc_name}\nMatched uploaded document text:\n{chunk[:1800]}"
         ))
         if len(windows) >= limit:
             break
@@ -228,13 +228,17 @@ def search_uploaded_texts(
     ]
 
 
-def repair_document_node_counts(user_id: str) -> None:
+def repair_document_node_counts(
+    user_id: str,
+    documents: list[dict] | None = None,
+) -> None:
     updates: list[tuple[int, str]] = []
-    for doc in list_documents(user_id):
+    for doc in documents if documents is not None else list_documents(user_id):
         if int(doc.get("node_count") or 0) > 0:
             continue
         text = _document_text(doc)
         node_count = estimate_node_count(text) if text else 10
+        doc["node_count"] = node_count
         updates.append((node_count, str(doc["id"])))
 
     if not updates:

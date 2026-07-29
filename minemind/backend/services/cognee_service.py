@@ -54,10 +54,9 @@ def _default_embedding_tokenizer() -> str:
 os.environ.setdefault("EMBEDDING_TOKENIZER", _default_embedding_tokenizer())
 os.environ.setdefault("HUGGINGFACE_TOKENIZER", os.environ["EMBEDDING_TOKENIZER"])
 
-import cognee
-from cognee.api.v1.search import SearchType
-
 MemoryChunk = dict[str, str]
+_LOCAL_COGNEE: Any | None = None
+_LOCAL_SEARCH_TYPE: Any | None = None
 PERF_DEBUG = os.getenv("MINEMIND_PERF_DEBUG", "false").lower() == "true"
 PERF_LOG_PATH = Path(
     os.getenv(
@@ -105,6 +104,17 @@ def _cloud_api_key() -> str:
 
 def using_cognee_cloud() -> bool:
     return bool(_cloud_base_url() and _cloud_api_key())
+
+
+def _local_cognee() -> tuple[Any, Any]:
+    global _LOCAL_COGNEE, _LOCAL_SEARCH_TYPE
+    if _LOCAL_COGNEE is None or _LOCAL_SEARCH_TYPE is None:
+        import cognee as cognee_module
+        from cognee.api.v1.search import SearchType as search_type
+
+        _LOCAL_COGNEE = cognee_module
+        _LOCAL_SEARCH_TYPE = search_type
+    return _LOCAL_COGNEE, _LOCAL_SEARCH_TYPE
 
 
 def _cloud_headers(content_type: str = "application/json") -> dict[str, str]:
@@ -246,8 +256,9 @@ async def initialize_cognee():
     if using_cognee_cloud():
         return
 
-    cognee.config.system_root_directory(str(COGNEE_ROOT))
-    cognee.config.data_root_directory(str(COGNEE_ROOT / "data"))
+    local_cognee, _ = _local_cognee()
+    local_cognee.config.system_root_directory(str(COGNEE_ROOT))
+    local_cognee.config.data_root_directory(str(COGNEE_ROOT / "data"))
 
     llm_provider = _env("LLM_PROVIDER", "custom")
     llm_model = _env("GROQ_MODEL") or _env("LLM_MODEL", DEFAULT_GROQ_MODEL)
@@ -269,28 +280,28 @@ async def initialize_cognee():
         else llm_model
     )
 
-    cognee.config.set_llm_provider(cognee_llm_provider)
-    cognee.config.set_llm_model(cognee_llm_model)
-    cognee.config.set_llm_endpoint(llm_endpoint)
+    local_cognee.config.set_llm_provider(cognee_llm_provider)
+    local_cognee.config.set_llm_model(cognee_llm_model)
+    local_cognee.config.set_llm_endpoint(llm_endpoint)
     if llm_api_key:
-        cognee.config.set_llm_api_key(llm_api_key)
+        local_cognee.config.set_llm_api_key(llm_api_key)
     if llm_provider == "groq":
         os.environ.pop("LLM_API_KEY", None)
 
-    cognee.config.set_embedding_provider(_env("EMBEDDING_PROVIDER", "ollama"))
-    cognee.config.set_embedding_model(_env("EMBEDDING_MODEL", "nomic-embed-text"))
-    cognee.config.set_embedding_endpoint(
+    local_cognee.config.set_embedding_provider(_env("EMBEDDING_PROVIDER", "ollama"))
+    local_cognee.config.set_embedding_model(_env("EMBEDDING_MODEL", "nomic-embed-text"))
+    local_cognee.config.set_embedding_endpoint(
         _env("EMBEDDING_ENDPOINT", "http://localhost:11434/api/embed")
     )
-    cognee.config.set_embedding_dimensions(_env("EMBEDDING_DIMENSIONS", "768"))
-    cognee.config.set_embedding_config({
+    local_cognee.config.set_embedding_dimensions(_env("EMBEDDING_DIMENSIONS", "768"))
+    local_cognee.config.set_embedding_config({
         "huggingface_tokenizer": _env(
             "EMBEDDING_TOKENIZER",
             _default_embedding_tokenizer()
         )
     })
 
-    cognee.config.set_vector_db_provider(
+    local_cognee.config.set_vector_db_provider(
         _env("VECTOR_DB_PROVIDER") or _env("COGNEE_VECTOR_DB_PROVIDER", "lancedb")
     )
     graph_provider = (
@@ -299,7 +310,7 @@ async def initialize_cognee():
     )
     if graph_provider == "networkx":
         graph_provider = "kuzu"
-    cognee.config.set_graph_database_provider(graph_provider)
+    local_cognee.config.set_graph_database_provider(graph_provider)
 
 
 async def ingest_document(
@@ -328,7 +339,8 @@ async def ingest_document(
         })
         return max(10, len(text) // 500)
 
-    await cognee.remember(
+    local_cognee, _ = _local_cognee()
+    await local_cognee.remember(
         indexed_text,
         dataset_name=dataset_name,
         run_in_background=False
@@ -440,9 +452,10 @@ async def query_memory(
             return chunks
 
         recall_start = time.perf_counter()
-        results = await cognee.recall(
+        local_cognee, search_type = _local_cognee()
+        results = await local_cognee.recall(
             query_text=question,
-            query_type=SearchType.CHUNKS,
+            query_type=search_type.CHUNKS,
             datasets=datasets,
             top_k=top_k
         )
@@ -472,7 +485,6 @@ async def query_memory(
 
 
 async def query_memory_temporal(question: str, datasets: list) -> list:
-    from cognee.api.v1.search import SearchType
     try:
         if not datasets:
             return []
@@ -505,9 +517,10 @@ async def query_memory_temporal(question: str, datasets: list) -> list:
                 for chunk in _cloud_results_to_chunks(results)
             ]
 
-        results = await cognee.recall(
+        local_cognee, search_type = _local_cognee()
+        results = await local_cognee.recall(
             query_text=question,
-            query_type=SearchType.TEMPORAL,
+            query_type=search_type.TEMPORAL,
             datasets=datasets,
             top_k=10
         )
@@ -537,7 +550,8 @@ async def enrich_memory(datasets: list[str] | None = None) -> bool:
                 })
             return True
 
-        await cognee.improve()
+        local_cognee, _ = _local_cognee()
+        await local_cognee.improve()
         return True
     except Exception as e:
         print(f"Improve error: {e}")
@@ -559,7 +573,8 @@ async def delete_dataset(dataset_name: str) -> bool:
             })
             return True
 
-        await cognee.forget(dataset=dataset_name)
+        local_cognee, _ = _local_cognee()
+        await local_cognee.forget(dataset=dataset_name)
         return True
     except Exception as e:
         print(f"Forget error: {e}")
@@ -616,7 +631,8 @@ async def get_graph_data(datasets: list[str] | None = None) -> dict[str, list[di
                     })
             return {"nodes": nodes, "edges": edges}
 
-        results = await cognee.recall(
+        local_cognee, _ = _local_cognee()
+        results = await local_cognee.recall(
             query_text="mining operations safety equipment",
             datasets=datasets
         )
