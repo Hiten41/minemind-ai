@@ -110,6 +110,9 @@ def _legacy_text_for_doc(doc: dict) -> str:
 
 
 def _document_text(doc: dict) -> str:
+    extracted_text = doc.get("extracted_text")
+    if extracted_text:
+        return str(extracted_text)
     text_path = doc.get("text_path")
     if text_path:
         path = Path(str(text_path))
@@ -124,7 +127,7 @@ def rank_relevant_documents(
     limit: int = 40,
     focused_sources: set[str] | None = None,
 ) -> list[dict]:
-    docs = list_documents(user_id)
+    docs = list_documents(user_id, include_text=True)
     if focused_sources:
         focused_docs = [
             doc for doc in docs
@@ -209,7 +212,7 @@ def search_uploaded_texts(
         return []
 
     results: list[tuple[int, dict[str, str]]] = []
-    for doc in list_documents(user_id):
+    for doc in list_documents(user_id, include_text=True):
         doc_name = str(doc["name"])
         if allowed_sources and doc_name.lower() not in allowed_sources:
             continue
@@ -233,7 +236,7 @@ def repair_document_node_counts(
     documents: list[dict] | None = None,
 ) -> None:
     updates: list[tuple[int, str]] = []
-    for doc in documents if documents is not None else list_documents(user_id):
+    for doc in documents if documents is not None else list_documents(user_id, include_text=True):
         if int(doc.get("node_count") or 0) > 0:
             continue
         text = _document_text(doc)
@@ -272,7 +275,7 @@ def build_uploaded_text_graph(user_id: str) -> dict[str, list[dict[str, object]]
     nodes: list[dict[str, object]] = []
     edges: list[dict[str, object]] = []
 
-    for doc_index, doc in enumerate(list_documents(user_id)):
+    for doc_index, doc in enumerate(list_documents(user_id, include_text=True)):
         doc_id = f"doc_{doc_index}"
         doc_name = str(doc["name"])
         nodes.append({

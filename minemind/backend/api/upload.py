@@ -114,6 +114,7 @@ async def upload_document(
         "uploaded_at": datetime.now().isoformat(),
         "dataset_name": dataset_name,
         "text_path": text_path,
+        "extracted_text": text,
         "file_path": file_path,
         "file_content": content,
         "file_mime_type": file_mime_type,

@@ -151,6 +151,9 @@ class Citation:
 
 
 def document_text(doc: dict[str, Any]) -> str:
+    extracted_text = doc.get("extracted_text")
+    if extracted_text:
+        return str(extracted_text)
     text_path = doc.get("text_path")
     if not text_path:
         return ""
@@ -284,7 +287,7 @@ def hybrid_retrieve(
         return []
 
     results: list[tuple[float, dict[str, Any]]] = []
-    for doc in list_documents(user_id):
+    for doc in list_documents(user_id, include_text=True):
         title = str(doc.get("name") or "Uploaded document")
         if allowed_sources and title.lower() not in allowed_sources:
             continue
@@ -386,7 +389,7 @@ def build_document_intelligence(
 ) -> dict[str, Any]:
     documents = []
     entity_counts: Counter[str] = Counter()
-    for doc in source_documents if source_documents is not None else list_documents(user_id):
+    for doc in source_documents if source_documents is not None else list_documents(user_id, include_text=True):
         text = document_text(doc)
         extracted = extract_document_signals(text) if text.strip() else {}
         stored = doc.get("intelligence_signals") or {}
@@ -446,7 +449,7 @@ def build_mining_knowledge_graph(user_id: str) -> dict[str, list[dict[str, Any]]
         })
         return node_id
 
-    for doc_index, doc in enumerate(list_documents(user_id)):
+    for doc_index, doc in enumerate(list_documents(user_id, include_text=True)):
         doc_id = f"doc_{doc_index}"
         title = str(doc.get("name") or "Uploaded document")
         text = document_text(doc)
@@ -522,7 +525,7 @@ def risk_signals(
         "critical": {"fatal", "death", "explosion", "inundation", "collapse"},
         "high": {"fire", "methane", "roof fall", "injury", "blasting"},
     }
-    for doc in source_documents if source_documents is not None else list_documents(user_id):
+    for doc in source_documents if source_documents is not None else list_documents(user_id, include_text=True):
         text = document_text(doc).lower()
         for term in MINE_TERMS["hazards"]:
             count = text.count(term)
@@ -559,7 +562,7 @@ def _recommended_action(term: str) -> str:
 
 
 def user_memory_profile(user_id: str) -> dict[str, Any]:
-    docs = list_documents(user_id)
+    docs = list_documents(user_id, include_text=True)
     chats = list_chat_messages(user_id, limit=200)
     intelligence = build_document_intelligence(user_id, docs)
     return {

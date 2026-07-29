@@ -5,7 +5,9 @@ import json
 import os
 import re
 import secrets
+import tempfile
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -85,6 +87,7 @@ def init_auth_store() -> None:
                 uploaded_at TEXT NOT NULL,
                 dataset_name TEXT NOT NULL UNIQUE,
                 text_path TEXT,
+                extracted_text TEXT,
                 file_path TEXT,
                 risk_signals TEXT NOT NULL DEFAULT '{}',
                 risk_level TEXT NOT NULL DEFAULT 'none',
@@ -130,6 +133,7 @@ def init_auth_store() -> None:
             """
         )
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_path TEXT")
+        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_signals TEXT NOT NULL DEFAULT '{}'")
         conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'none'")
@@ -255,8 +259,8 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
         conn.execute(
             """
                 INSERT INTO documents
-                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals, file_content, file_mime_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, extracted_text, file_path, risk_signals, risk_level, intelligence_signals, file_content, file_mime_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc["id"],
@@ -268,6 +272,7 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
                 doc["uploaded_at"],
                 doc["dataset_name"],
                 doc.get("text_path"),
+                doc.get("extracted_text"),
                 doc.get("file_path"),
                 json.dumps(doc.get("risk_signals") or {}),
                 doc.get("risk_level", "none"),
@@ -307,17 +312,61 @@ def update_document_type(user_id: str, doc_id: str, doc_type: str) -> None:
         )
 
 
-def list_documents(user_id: str) -> list[dict[str, Any]]:
+def _recover_extracted_text(name: str, content: bytes) -> str:
+    from services.parser import parse_file
+
+    suffix = Path(name or "document.txt").suffix or ".txt"
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+        return parse_file(temp_path, name)
+    except (OSError, RuntimeError):
+        return ""
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def list_documents(
+    user_id: str,
+    include_text: bool = False,
+) -> list[dict[str, Any]]:
+    text_columns = """
+        , extracted_text
+        , CASE WHEN extracted_text IS NULL THEN file_content ELSE NULL END AS recovery_file_content
+        , file_mime_type
+    """ if include_text else ""
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals
+            {text_columns}
             FROM documents
             WHERE user_id = %s
             ORDER BY uploaded_at DESC
             """,
             (user_id,),
         ).fetchall()
+        if include_text:
+            for row in rows:
+                if row.get("extracted_text") or not row.get("recovery_file_content"):
+                    continue
+                recovered_text = _recover_extracted_text(
+                    str(row.get("name") or "document.txt"),
+                    bytes(row["recovery_file_content"]),
+                )
+                if not recovered_text:
+                    continue
+                conn.execute(
+                    "UPDATE documents SET extracted_text = %s WHERE user_id = %s AND id = %s",
+                    (recovered_text, user_id, row["id"]),
+                )
+                row["extracted_text"] = recovered_text
     return [_document_row(row) for row in rows]
 
 
@@ -384,6 +433,8 @@ def get_document_file_for_user(user_id: str, doc_id: str) -> dict[str, Any] | No
 
 def _document_row(row: dict[str, Any]) -> dict[str, Any]:
     item = dict(row)
+    item.pop("file_content", None)
+    item.pop("recovery_file_content", None)
     try:
         item["risk_signals"] = json.loads(item.get("risk_signals") or "{}")
     except (TypeError, json.JSONDecodeError):
