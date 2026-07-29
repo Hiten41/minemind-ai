@@ -58,7 +58,7 @@ MAX_RECALLED_CHUNKS = 4
 MAX_CHUNK_SNIPPET_CHARS = 1800
 MAX_CONTEXT_CHARS = 5200
 RETRIEVAL_CACHE_TTL_SECONDS = 300
-CACHE_VERSION = "pdf-grounding-v2"
+CACHE_VERSION = "document-grounding-v3"
 RetrievalCacheKey = tuple[str, str, str, tuple[str, ...]]
 RETRIEVAL_CACHE: dict[RetrievalCacheKey, tuple[float, list[MemoryChunk | str]]] = {}
 AnswerCacheKey = tuple[str, str, str, tuple[str, ...]]
@@ -186,8 +186,8 @@ def remove_meta_results(result: dict) -> dict:
 
 def ensure_general_fallback_is_labeled(result: dict) -> dict:
     answer = str(result.get("answer") or "").strip()
-    fallback_prefix = "I could not find this in your uploaded PDFs. General answer:"
-    if not answer.lower().startswith("i could not find this in your uploaded pdfs"):
+    fallback_prefix = "I could not find this in your uploaded documents. General answer:"
+    if not answer.lower().startswith("i could not find this in your uploaded documents"):
         answer = f"{fallback_prefix} {answer}"
     try:
         confidence = float(result.get("confidence") or 0.5)
@@ -195,7 +195,7 @@ def ensure_general_fallback_is_labeled(result: dict) -> dict:
         confidence = 0.5
     result["answer"] = answer
     result["reasoning"] = (
-        "No relevant chunks were recalled from the signed-in user's uploaded PDF memory. "
+        "No relevant chunks were recalled from the signed-in user's uploaded document memory. "
         "The answer is a clearly labeled general fallback."
     )
     result["sources"] = []
@@ -206,7 +206,7 @@ def ensure_general_fallback_is_labeled(result: dict) -> dict:
 
 def answer_is_general_fallback(result: dict) -> bool:
     answer = str(result.get("answer") or "").strip().lower()
-    return answer.startswith("i could not find this in your uploaded pdfs")
+    return answer.startswith("i could not find this in your uploaded documents")
 
 
 def answer_says_not_found(result: dict) -> bool:
@@ -239,7 +239,7 @@ def enforce_not_found_guardrails(result: dict) -> dict:
     result["action_plan"] = []
     result["confidence"] = min(confidence, 0.25)
     result["confidence_notes"] = (
-        "Low confidence because no uploaded-PDF evidence was found for this question."
+        "Low confidence because no uploaded-document evidence was found for this question."
     )
     if not str(result.get("answer") or "").lower().startswith("i could not find"):
         result["answer"] = NO_DOCUMENT_MATCH_MESSAGE
@@ -248,8 +248,8 @@ def enforce_not_found_guardrails(result: dict) -> dict:
 
 def ensure_pdf_answer_is_labeled(result: dict) -> dict:
     answer = str(result.get("answer") or "").strip()
-    if answer and not answer.lower().startswith("from your uploaded pdfs:"):
-        result["answer"] = f"From your uploaded PDFs: {answer}"
+    if answer and not answer.lower().startswith("from your uploaded documents:"):
+        result["answer"] = f"From your uploaded documents: {answer}"
     return result
 
 
@@ -514,7 +514,7 @@ def referenced_pdf_names(question: str) -> list[str]:
 def remove_referenced_pdf_names(question: str) -> str:
     cleaned = question
     for name in referenced_pdf_names(question):
-        cleaned = cleaned.replace(name, "the uploaded PDF")
+        cleaned = cleaned.replace(name, "the uploaded document")
     return " ".join(cleaned.split())
 
 
@@ -651,7 +651,7 @@ def jitpur_incident_result(
         excerpt = prompt_snippet(text, 100)
         return {
             "answer": (
-                "From your uploaded PDFs: The matching entry appears as Jitpur in the PDF "
+                "From your uploaded documents: The matching entry appears as Jitpur in the document "
                 "(likely the same incident you asked as Jeetpur). The listed accident date is "
                 "18/03/1973, the location/name is Jitpur, the fatalities count is 10, and the "
                 "cause is recorded as an explosion of fire damp."
@@ -835,9 +835,9 @@ def document_overview_result(
         return None
 
     return {
-        "answer": "From your uploaded PDFs: " + " ".join(answer_parts),
+        "answer": "From your uploaded documents: " + " ".join(answer_parts),
         "reasoning": (
-            "Used stored extracted PDF text directly for a named-document overview, "
+            "Used stored extracted document text directly for a named-document overview, "
             "so the answer lists concrete contents instead of a risk summary."
         ),
         "sources": source_items,
@@ -845,7 +845,7 @@ def document_overview_result(
         "confidence": 0.88,
         "mode": agent_mode,
         "action_plan": ["Ask a more specific follow-up about any listed section."],
-        "confidence_notes": "High confidence because the overview is extracted directly from stored uploaded PDF text.",
+        "confidence_notes": "High confidence because the overview is extracted directly from stored uploaded document text.",
         "query_type": query_type,
     }
 
@@ -971,7 +971,7 @@ def equipment_context_result(
         "specific service dates",
     ))
     answer_parts = [
-        f"From your uploaded PDFs: {equipment_label} is mentioned in {source_label}.",
+        f"From your uploaded documents: {equipment_label} is mentioned in {source_label}.",
     ]
     if explicitly_maintenance_history:
         answer_parts.append("I did not find a dedicated maintenance-history log for it, so I should not claim specific service dates or repairs.")
@@ -1017,7 +1017,7 @@ def _context_line_value(context: str, label: str) -> str:
 
 def _context_source_name(context: str) -> str:
     match = re.search(r"\[Risk signal source:\s*(.*?)\]", context)
-    return match.group(1).strip() if match else "Uploaded PDF"
+    return match.group(1).strip() if match else "Uploaded document"
 
 
 def document_risk_result(
@@ -1040,10 +1040,10 @@ def document_risk_result(
             supporting_excerpt = prompt_snippet(chunk_text(chunk), 120)
             break
     if not supporting_excerpt:
-        supporting_excerpt = signal_counts or hazards or "Document risk signals were extracted from the uploaded PDF text."
+        supporting_excerpt = signal_counts or hazards or "Document risk signals were extracted from the uploaded document text."
 
     answer_parts = [
-        f"From your uploaded PDFs: {source} shows a {alert_level} risk profile across multiple safety categories.",
+        f"From your uploaded documents: {source} shows a {alert_level} risk profile across multiple safety categories.",
     ]
     if signal_counts:
         answer_parts.append(f"The document scan found {signal_counts}.")
@@ -1054,14 +1054,14 @@ def document_risk_result(
     if actions and actions != "none detected":
         answer_parts.append(f"Compliance and control themes include {actions}.")
     answer_parts.append(
-        "Overall, the main risk areas are accident and injury potential, blasting and explosive hazards, collapse or roof-fall style hazards, electrical hazards, fire/explosion/gas hazards, ventilation hazards, machinery and haulage hazards, and the compliance-control duties linked to those risks."
+        "Prioritize the detected themes above; risks that are not present in the document evidence are not included in this assessment."
     )
 
     return {
         "answer": " ".join(answer_parts),
         "reasoning": (
-            f"Used the full stored risk-signal scan for {source} and supporting Cognee-recalled PDF evidence. "
-            "This avoids reducing a named-PDF risk analysis to only the first matching chunk."
+            f"Used the full stored risk-signal scan for {source} and supporting Cognee-recalled document evidence. "
+            "This avoids reducing a named-document risk analysis to only the first matching chunk."
         ),
         "sources": [{
             "title": source,
@@ -1075,7 +1075,7 @@ def document_risk_result(
             "Review the highest-count hazard themes first.",
             "Map equipment/process risks to inspection, ventilation, isolation, and reporting controls.",
         ],
-        "confidence_notes": "High confidence because the answer uses the focused PDF risk-signal scan plus Cognee-recalled evidence.",
+        "confidence_notes": "High confidence because the answer uses the focused document risk-signal scan plus Cognee-recalled evidence.",
         "query_type": query_type,
     }
 
@@ -1127,7 +1127,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     if small_talk_answer is not None:
         query_response = QueryResponse(
             answer=small_talk_answer,
-            reasoning="Handled as a conversational greeting, so uploaded PDF retrieval was not needed.",
+            reasoning="Handled as a conversational greeting, so uploaded document retrieval was not needed.",
             sources=[],
             related_memories=[],
             confidence=1.0,
@@ -1237,7 +1237,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
                     "source": doc_name,
                     "text": (
                         f"Document: {doc_name}\n"
-                        "Stored uploaded PDF text for overview:\n"
+                        "Stored uploaded document text for overview:\n"
                         f"{text[:3600]}"
                     ),
                 })
@@ -1463,7 +1463,7 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     context = "\n\n---\n\n".join(
         f"[Source: {chunk_source(chunk, index, source_names)}]\n{prompt_snippet(chunk_text(chunk), MAX_CHUNK_SNIPPET_CHARS)}"
         for index, chunk in enumerate(recalled_chunks[:MAX_RECALLED_CHUNKS], start=1)
-    ) if pdf_context_found else "No relevant uploaded PDF chunks were recalled."
+    ) if pdf_context_found else "No relevant uploaded document chunks were recalled."
     context = context[:MAX_CONTEXT_CHARS]
 
     history = "\n".join([
@@ -1478,37 +1478,37 @@ async def query_ai(request: QueryRequest, user: dict[str, str] = Depends(current
     if focused_sources and is_document_overview_question(request.question):
         overview_instruction = (
             "DOCUMENT OVERVIEW MODE:\n"
-            "- The user is asking what is inside/listed in the focused PDF.\n"
+            "- The user is asking what is inside/listed in the focused document.\n"
             "- Do not answer with a risk profile unless the user explicitly asks for risks, hazards, danger, or risk assessment.\n"
-            "- Do not answer only with the PDF title.\n"
-            "- Summarize the stored PDF evidence as a compact list of actual sections, headings, events, rules, requirements, dates, thresholds, equipment, corrective actions, training items, or other concrete contents shown.\n"
-            "- If only the start of the PDF was recalled, say that the recalled portion shows those items, not the whole PDF.\n"
+            "- Do not answer only with the document title.\n"
+            "- Summarize the stored document evidence as a compact list of actual sections, headings, events, rules, requirements, dates, thresholds, equipment, corrective actions, training items, or other concrete contents shown.\n"
+            "- If only the start of the document was recalled, say that the recalled portion shows those items, not the whole document.\n"
         )
     risk_instruction = ""
     if document_risk_context:
         risk_instruction = (
             "DOCUMENT RISK ANALYSIS MODE:\n"
-            "- The user is asking for risks in a named uploaded PDF.\n"
-            "- Use the document risk signals as a required summary of the whole focused PDF, then support the explanation with Cognee PDF context when available.\n"
+            "- The user is asking for risks in a named uploaded document.\n"
+            "- Use the document risk signals as a required summary of the whole focused document, then support the explanation with Cognee document context when available.\n"
             "- Do not reduce the answer to only one recalled chunk if the risk signal summary shows broader hazards.\n"
             "- Mention the main categories and counts from the risk signal summary, then explain the most important risk themes in plain language.\n"
         )
     timings["context_and_prompt_assembly_ms"] = perf_ms(stage_start)
 
     prompt = f"""You are MineMind AI, a mining safety assistant.
-Answer only from the uploaded PDF evidence below. Start PDF-backed answers with "From your uploaded PDFs:".
+Answer only from the uploaded document evidence below. Start document-backed answers with "From your uploaded documents:".
 Use source names from [Source: ...]. Do not invent facts or cite chat history.
-Prefer exact stored uploaded-text matches over broad semantic memory when the user asks for exact words, lists, corrective actions, training requirements, dates, thresholds, names, or named-PDF details.
-If a requested fact is not present in the uploaded PDF evidence, say you could not find it and return no sources with low confidence.
-For vague document-overview questions, summarize what the recalled PDF context actually shows and say when only part of the PDF was recalled.
-For incident questions, use close spelling variants found in the PDF context; if the user says "Jeetpur" and the PDF says "Jitpur", answer as the likely matching entry and mention the spelling difference.
+Prefer exact stored uploaded-text matches over broad semantic memory when the user asks for exact words, lists, corrective actions, training requirements, dates, thresholds, names, or named-document details.
+If a requested fact is not present in the uploaded document evidence, say you could not find it and return no sources with low confidence.
+For vague document-overview questions, summarize what the recalled document context actually shows and say when only part of the document was recalled.
+For incident questions, use close spelling variants found in the document context; if the user says "Jeetpur" and the document says "Jitpur", answer as the likely matching entry and mention the spelling difference.
 If context is insufficient, return the uploaded-document not-found message.
 Role hint: {user_role}. Mode: {agent_mode}. Query type: {query_type}.
 
 {overview_instruction}
 {risk_instruction}
 
-UPLOADED PDF EVIDENCE:
+UPLOADED DOCUMENT EVIDENCE:
 {context}
 
 DOCUMENT RISK SIGNALS:
@@ -1525,10 +1525,10 @@ QUESTION: {request.question}
 Respond ONLY with this exact JSON format, no other text:
 {{
   "answer": "your detailed answer here citing sources",
-  "reasoning": "briefly explain which uploaded PDF source names support the answer, or say this is a general fallback",
+  "reasoning": "briefly explain which uploaded document source names support the answer, or say this is a general fallback",
   "sources": [
     {{
-      "title": "actual uploaded PDF filename or dataset_name",
+      "title": "actual uploaded document filename or dataset_name",
       "excerpt": "relevant text excerpt max 100 chars",
       "relevance": 0.9
     }}

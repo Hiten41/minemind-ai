@@ -29,11 +29,15 @@ router = APIRouter()
 USER_FILE_ROOT = STORAGE_ROOT / "user_files"
 
 
-def repair_document_types(user_id: str) -> None:
-    for doc in list_documents(user_id):
+def repair_document_types(
+    user_id: str,
+    documents: list[dict] | None = None,
+) -> None:
+    for doc in documents if documents is not None else list_documents(user_id):
         detected_type = classify_document_type(doc)
         if detected_type != str(doc.get("type") or "").lower():
             update_document_type(user_id, str(doc["id"]), detected_type)
+            doc["type"] = detected_type
 
 
 def store_original_file(user_id: str, doc_id: str, filename: str, content: bytes) -> str:
@@ -131,9 +135,10 @@ async def upload_document(
 
 @router.get("/api/documents")
 async def get_documents(user: dict[str, str] = Depends(current_user)):
-    repair_document_node_counts(user["id"])
-    repair_document_types(user["id"])
-    return list_documents(user["id"])
+    documents = list_documents(user["id"])
+    repair_document_node_counts(user["id"], documents)
+    repair_document_types(user["id"], documents)
+    return documents
 
 
 @router.get("/api/documents/page")
@@ -143,9 +148,10 @@ async def get_documents_page(
     doc_type: str | None = None,
     user: dict[str, str] = Depends(current_user),
 ):
-    repair_document_node_counts(user["id"])
-    repair_document_types(user["id"])
-    return list_documents_page(user["id"], limit=limit, offset=offset, doc_type=doc_type)
+    page = list_documents_page(user["id"], limit=limit, offset=offset, doc_type=doc_type)
+    repair_document_node_counts(user["id"], page["items"])
+    repair_document_types(user["id"], page["items"])
+    return page
 
 
 @router.get("/api/documents/{doc_id}/file")
@@ -172,7 +178,7 @@ async def get_document_file(
     if not file_path:
         raise HTTPException(
             status_code=404,
-            detail="Original file is not available for this older upload. Please re-upload it to enable PDF preview.",
+            detail="Original file is not available for this older upload. Please re-upload it to enable file preview.",
         )
 
     path = Path(str(file_path)).resolve()

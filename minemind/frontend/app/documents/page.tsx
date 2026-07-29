@@ -46,6 +46,12 @@ function formatDate(value: string) {
   })
 }
 
+function displayStatus(document: Document) {
+  if (document.status === 'ingested') return 'Indexed'
+  if (document.status === 'stored' && document.node_count > 0) return 'Ready (memory indexing)'
+  return document.status
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
@@ -460,7 +466,7 @@ export default function DocumentsPage() {
               <div className="mt-8 grid gap-3 sm:grid-cols-3">
                 {[
                   ['Type', selectedDocument.type],
-                  ['Status', selectedDocument.status],
+                  ['Status', displayStatus(selectedDocument)],
                   ['Indexed sections', String(selectedDocument.node_count)]
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-3xl border border-white/10 bg-black/18 p-4">
@@ -475,7 +481,7 @@ export default function DocumentsPage() {
                   <div>
                     <p className="text-sm font-medium text-white/78">Original document</p>
                     <p className="mt-1 text-xs text-white/38">
-                      {previewLoading ? 'Loading file preview...' : previewUrl ? 'PDF preview is ready.' : 'Preview unavailable for this file.'}
+                      {previewLoading ? 'Loading file preview...' : previewUrl ? 'File preview is ready.' : 'Preview unavailable for this file.'}
                     </p>
                   </div>
                   {previewUrl ? (
@@ -510,7 +516,7 @@ export default function DocumentsPage() {
                         {previewError || 'Original file is not available for preview.'}
                       </p>
                       <p className="mt-2 text-xs leading-5 text-white/34">
-                        Older uploads only stored extracted text. Re-upload this PDF once to enable the real PDF preview.
+                        Older uploads only stored extracted text. Re-upload this document once to enable the original-file preview.
                       </p>
                     </div>
                   </div>

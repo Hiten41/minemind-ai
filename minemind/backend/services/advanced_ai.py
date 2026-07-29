@@ -25,6 +25,11 @@ EQUIPMENT_FAILURE_KEYWORDS = (
     "malfunction",
     "damaged",
     "faulty",
+    "fault",
+    "stopped",
+    "shutdown",
+    "offline",
+    "out of service",
 )
 
 HAZARD_KEYWORDS = (
@@ -375,10 +380,13 @@ def confidence_notes(citations: list[Citation]) -> str:
     return f"Found {len(citations)} uploaded-document evidence passages, including {strong} strong matches."
 
 
-def build_document_intelligence(user_id: str) -> dict[str, Any]:
+def build_document_intelligence(
+    user_id: str,
+    source_documents: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     documents = []
     entity_counts: Counter[str] = Counter()
-    for doc in list_documents(user_id):
+    for doc in source_documents if source_documents is not None else list_documents(user_id):
         text = document_text(doc)
         extracted = extract_document_signals(text) if text.strip() else {}
         stored = doc.get("intelligence_signals") or {}
@@ -499,7 +507,10 @@ def _summary_from_text(text: str, title: str) -> str:
     return " ".join(sentence for _score, sentence in sorted(scored, reverse=True)[:2])
 
 
-def risk_signals(user_id: str) -> list[dict[str, Any]]:
+def risk_signals(
+    user_id: str,
+    source_documents: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     signals: dict[str, dict[str, Any]] = defaultdict(lambda: {
         "name": "",
         "severity": "medium",
@@ -511,7 +522,7 @@ def risk_signals(user_id: str) -> list[dict[str, Any]]:
         "critical": {"fatal", "death", "explosion", "inundation", "collapse"},
         "high": {"fire", "methane", "roof fall", "injury", "blasting"},
     }
-    for doc in list_documents(user_id):
+    for doc in source_documents if source_documents is not None else list_documents(user_id):
         text = document_text(doc).lower()
         for term in MINE_TERMS["hazards"]:
             count = text.count(term)
@@ -550,10 +561,10 @@ def _recommended_action(term: str) -> str:
 def user_memory_profile(user_id: str) -> dict[str, Any]:
     docs = list_documents(user_id)
     chats = list_chat_messages(user_id, limit=200)
-    intelligence = build_document_intelligence(user_id)
+    intelligence = build_document_intelligence(user_id, docs)
     return {
         "document_count": len(docs),
         "chat_memory_count": len(chats),
         "top_entities": intelligence["top_entities"],
-        "risk_signals": risk_signals(user_id),
+        "risk_signals": risk_signals(user_id, docs),
     }

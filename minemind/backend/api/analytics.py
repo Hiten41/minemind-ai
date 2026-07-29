@@ -27,9 +27,9 @@ def has_equipment_signals(doc: dict, intelligence_doc: dict | None) -> bool:
 @router.get("/api/analytics",
             response_model=AnalyticsData)
 async def get_analytics(user: dict[str, str] = Depends(current_user)):
-    repair_document_node_counts(user["id"])
     uploaded_documents = list_documents(user["id"])
-    intelligence = build_document_intelligence(user["id"])
+    repair_document_node_counts(user["id"], uploaded_documents)
+    intelligence = build_document_intelligence(user["id"], uploaded_documents)
     intelligence_by_id = {
         str(item.get("id")): item
         for item in intelligence.get("documents", [])
@@ -71,6 +71,6 @@ async def get_analytics(user: dict[str, str] = Depends(current_user)):
             {"name": k, "value": v}
             for k, v in type_counts.items()
         ],
-        risk_signals=risk_signals(user["id"]),
+        risk_signals=risk_signals(user["id"], uploaded_documents),
         top_entities=intelligence["top_entities"],
     )
