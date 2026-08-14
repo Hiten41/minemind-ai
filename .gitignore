@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+node_modules/
+.next/
+deploy-env/
+*.sqlite3
+*.db
+minemind/backend/.cognee/
+minemind/evaluation/corpus/raw/
+minemind/evaluation/results/
+minemind/evaluation/cache/

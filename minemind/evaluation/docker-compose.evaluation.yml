@@ -1,0 +1,17 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+  evaluation:
+    build:
+      context: ../..
+      dockerfile: minemind/evaluation/Dockerfile
+    depends_on:
+      - ollama
+    volumes:
+      - ./corpus:/workspace/evaluation/corpus
+      - ./results:/workspace/evaluation/results
+    command: ["python", "evaluation/run_benchmark.py", "--ollama-base-url", "http://ollama:11434"]
+volumes:
+  ollama_models:

@@ -1,0 +1,11 @@
+{
+  "dataset_name": "DGMS-public-safety-mini",
+  "license_note": "The benchmark downloads public documents directly from the Directorate General of Mines Safety (DGMS), Government of India. Downloaded PDFs are intentionally excluded from git; check the host's terms and any applicable use restrictions before redistributing them.",
+  "sources": [
+    {"id": "coal_mines_regulations_2017", "title": "Coal Mines Regulations, 2017", "url": "https://www.dgms.gov.in/writereaddata/UploadFile/Coal_Mines_Regulation_2017_Noti.pdf", "landing_page": "https://www.dgms.gov.in/UserView?mid=1264", "filename": "coal_mines_regulations_2017.pdf"},
+    {"id": "mine_rescue_rules_1985", "title": "Mines Rescue Rules, 1985", "url": "https://www.dgms.gov.in/writereaddata/UploadFile/Mines%20Rescue%20Rules,%201985.pdf", "landing_page": "https://www.dgms.gov.in/UserView?mid=1264", "filename": "mine_rescue_rules_1985.pdf"},
+    {"id": "mines_vocational_training_rules_1966", "title": "Mines Vocational Training Rules, 1966", "url": "https://www.dgms.gov.in/writereaddata/UploadFile/MineVocational966.pdf", "landing_page": "https://www.dgms.gov.in/UserView?mid=1264", "filename": "mines_vocational_training_rules_1966.pdf"},
+    {"id": "central_electricity_safety_2023", "title": "Central Electricity Authority Regulations (Safety and Electric Supply), 2023", "url": "https://www.dgms.gov.in/writereaddata/UploadFile/CentralElectricity2023.pdf", "landing_page": "https://www.dgms.gov.in/UserView?mid=1264", "filename": "central_electricity_safety_2023.pdf"},
+    {"id": "dgms_annual_report_2024", "title": "DGMS Annual Report 2024", "url": "https://www.dgms.gov.in/writereaddata/UploadFile/AR_2024_Final_16122025.pdf", "landing_page": "https://www.dgms.gov.in/UserView/index?mid=1651", "filename": "dgms_annual_report_2024.pdf"}
+  ]
+}

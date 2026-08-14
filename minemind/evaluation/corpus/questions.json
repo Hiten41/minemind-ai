@@ -1,0 +1,12 @@
+[
+  {"id": "q01", "question": "Which document sets the rules for coal mine operations and safety?", "relevant_documents": ["coal_mines_regulations_2017"]},
+  {"id": "q02", "question": "Where should a mine manager look for requirements governing rescue stations and rescue work?", "relevant_documents": ["mine_rescue_rules_1985"]},
+  {"id": "q03", "question": "Which safety document governs vocational training for mine workers?", "relevant_documents": ["mines_vocational_training_rules_1966"]},
+  {"id": "q04", "question": "What regulation addresses electrical safety and electricity supply in a mine?", "relevant_documents": ["central_electricity_safety_2023"]},
+  {"id": "q05", "question": "I need the official DGMS document that reports mine-safety activity and annual statistics for 2024.", "relevant_documents": ["dgms_annual_report_2024"]},
+  {"id": "q06", "question": "Find the rules that would help plan and organise an emergency mine rescue response.", "relevant_documents": ["mine_rescue_rules_1985"]},
+  {"id": "q07", "question": "Which document explains the safety framework specific to coal mines, rather than general worker training?", "relevant_documents": ["coal_mines_regulations_2017"]},
+  {"id": "q08", "question": "Where can I find requirements related to electrical installations and safe supply of electricity?", "relevant_documents": ["central_electricity_safety_2023"]},
+  {"id": "q09", "question": "What official rulebook covers training before people work in a mine?", "relevant_documents": ["mines_vocational_training_rules_1966"]},
+  {"id": "q10", "question": "Which DGMS publication is best for an annual overview of safety administration and incidents?", "relevant_documents": ["dgms_annual_report_2024"]}
+]

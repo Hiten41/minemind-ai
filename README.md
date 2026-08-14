@@ -26,7 +26,17 @@ Upload a DGMS regulation PDF and an incident report. Ask:
 
 MineMind reasons across the uploaded documents, returns a grounded answer with cited sources, confidence score, and reasoning, then preserves that memory for future sessions.
 
-Live demo: coming soon.
+Live demo: [minemind-ai-steel.vercel.app](https://minemind-ai-steel.vercel.app/)
+
+## Retrieval Evaluation
+
+MineMind now includes a reproducible retrieval evaluation under [`minemind/evaluation`](minemind/evaluation/). It downloads a small public DGMS safety corpus locally and compares:
+
+- BM25 lexical retrieval
+- Dense retrieval with Ollama's `nomic-embed-text`
+- Hybrid reciprocal-rank fusion with a transparent chunk-entity graph
+
+The harness reports Recall@k, MRR, source-selection precision@k, and retrieval latency. It measures retrieval and source selection only; source-selection precision must not be presented as LLM answer accuracy. See the [evaluation README](minemind/evaluation/README.md) for local and Docker runs.
 
 ---
 
