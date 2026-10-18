@@ -5,6 +5,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import tempfile
 import time
 from pathlib import Path
@@ -13,14 +14,16 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import Depends, Header, HTTPException
 import psycopg2
-from psycopg2 import Binary
 from psycopg2 import errors
 from psycopg2.extras import RealDictCursor
 
-from services.settings import AUTH_SECRET
+from services.settings import AUTH_SECRET, IS_PRODUCTION, STORAGE_ROOT
 
-TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30
+TOKEN_TTL_SECONDS = 60 * 60 * 12
 DOCUMENT_PAGE_SIZE_MAX = 100
+LOCAL_DATABASE_PATH = Path(
+    os.getenv("MINEMIND_SQLITE_PATH", str(STORAGE_ROOT / "minemind-local.db"))
+).expanduser()
 
 
 def _database_url() -> str:
@@ -38,6 +41,8 @@ def _database_url() -> str:
 
 
 class PostgresConnection:
+    is_sqlite = False
+
     def __init__(self):
         self.conn = psycopg2.connect(_database_url(), cursor_factory=RealDictCursor)
 
@@ -57,8 +62,59 @@ class PostgresConnection:
         return cur
 
 
-def _connect() -> PostgresConnection:
-    return PostgresConnection()
+class SQLiteCursor:
+    """Return dictionary rows so local SQLite matches the PostgreSQL service API."""
+
+    def __init__(self, cursor: sqlite3.Cursor):
+        self.cursor = cursor
+
+    @staticmethod
+    def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        return dict(row) if row is not None else None
+
+    def fetchone(self) -> dict[str, Any] | None:
+        return self._row(self.cursor.fetchone())
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.cursor.fetchall()]
+
+
+class SQLiteConnection:
+    """Development-only persistent store used when DATABASE_URL is not configured."""
+
+    is_sqlite = True
+
+    def __init__(self):
+        LOCAL_DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(LOCAL_DATABASE_PATH, timeout=15)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        if exc_type:
+            self.conn.rollback()
+        else:
+            self.conn.commit()
+        self.conn.close()
+
+    def execute(self, query: str, params: tuple | list | None = None) -> SQLiteCursor:
+        # The service queries use psycopg parameter placeholders. SQLite uses ?.
+        sqlite_query = query.replace("%s", "?").replace("BYTEA", "BLOB")
+        cursor = self.conn.cursor()
+        cursor.execute(sqlite_query, params or ())
+        return SQLiteCursor(cursor)
+
+
+def _connect() -> PostgresConnection | SQLiteConnection:
+    if os.getenv("DATABASE_URL", "").strip():
+        return PostgresConnection()
+    if IS_PRODUCTION:
+        # Keep the deployed service fail-closed: local SQLite is only for development.
+        _database_url()
+    return SQLiteConnection()
 
 
 def init_auth_store() -> None:
@@ -132,14 +188,33 @@ def init_auth_store() -> None:
             ON chat_messages(user_id, created_at DESC)
             """
         )
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_path TEXT")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_signals TEXT NOT NULL DEFAULT '{}'")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'none'")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS intelligence_signals TEXT NOT NULL DEFAULT '{}'")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_content BYTEA")
-        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_mime_type TEXT")
+        document_columns = {
+            "text_path": "TEXT",
+            "extracted_text": "TEXT",
+            "file_path": "TEXT",
+            "risk_signals": "TEXT NOT NULL DEFAULT '{}'",
+            "risk_level": "TEXT NOT NULL DEFAULT 'none'",
+            "intelligence_signals": "TEXT NOT NULL DEFAULT '{}'",
+            "file_content": "BLOB" if conn.is_sqlite else "BYTEA",
+            "file_mime_type": "TEXT",
+        }
+        if conn.is_sqlite:
+            existing_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(documents)").fetchall()
+            }
+            for column, definition in document_columns.items():
+                if column not in existing_columns:
+                    conn.execute(f"ALTER TABLE documents ADD COLUMN {column} {definition}")
+        else:
+            for column, definition in document_columns.items():
+                conn.execute(
+                    f"ALTER TABLE documents ADD COLUMN IF NOT EXISTS {column} {definition}"
+                )
+
+    from services.migrations import migrate
+    with _connect() as conn:
+        migrate(conn)
 
 
 def _hash_password(password: str, salt: str | None = None) -> str:
@@ -174,10 +249,15 @@ def create_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
         "exp": int(time.time()) + TOKEN_TTL_SECONDS,
+        "sid": secrets.token_hex(16),
     }
     body = _b64(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     sig = hmac.new(AUTH_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256)
-    return f"{body}.{_b64(sig.digest())}"
+    token = f"{body}.{_b64(sig.digest())}"
+    with _connect() as conn:
+        conn.execute('DELETE FROM sessions WHERE expires < %s',(int(time.time()),))
+        conn.execute('INSERT INTO sessions(token_hash,user_id,expires) VALUES (%s,%s,%s)',(hashlib.sha256(token.encode()).hexdigest(),user_id,payload['exp']))
+    return token
 
 
 def verify_token(token: str) -> str:
@@ -193,6 +273,10 @@ def verify_token(token: str) -> str:
         payload = json.loads(_unb64(body))
         if int(payload["exp"]) < int(time.time()):
             raise ValueError("expired")
+        with _connect() as conn:
+            session = conn.execute('SELECT user_id FROM sessions WHERE token_hash=%s AND expires >= %s',(hashlib.sha256(token.encode()).hexdigest(),int(time.time()))).fetchone()
+        if not session or session['user_id'] != payload['sub']:
+            raise ValueError('revoked session')
         return str(payload["sub"])
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired session") from exc
@@ -210,8 +294,13 @@ def public_user(row: dict[str, Any]) -> dict[str, str]:
 def create_user(name: str, email: str, mobile: str, password: str) -> dict[str, str]:
     email = email.strip().lower()
     mobile = mobile.strip()
-    if len(password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    from models.schemas import RegisterRequest
+    from pydantic import ValidationError
+    try:
+        validated = RegisterRequest(name=name,email=email,mobile=mobile,password=password)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail='Invalid registration fields; use a valid email, phone and password of at least 6 characters') from exc
+    name, email, mobile = validated.name, validated.email, validated.mobile
     user_id = secrets.token_hex(16)
     try:
         with _connect() as conn:
@@ -223,7 +312,7 @@ def create_user(name: str, email: str, mobile: str, password: str) -> dict[str, 
                 (user_id, name.strip() or "MineMind User", email, mobile, _hash_password(password)),
             )
             row = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
-    except errors.UniqueViolation as exc:
+    except (errors.UniqueViolation, sqlite3.IntegrityError) as exc:
         raise HTTPException(status_code=409, detail="Email or mobile already registered") from exc
     return public_user(row)
 
@@ -248,7 +337,7 @@ def get_user_by_id(user_id: str) -> dict[str, str]:
     return public_user(row)
 
 
-async def current_user(authorization: str | None = Header(default=None)) -> dict[str, str]:
+def current_user(authorization: str | None = Header(default=None)) -> dict[str, str]:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Sign in required")
     return get_user_by_id(verify_token(authorization.split(" ", 1)[1]))
@@ -259,8 +348,8 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
         conn.execute(
             """
                 INSERT INTO documents
-                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, extracted_text, file_path, risk_signals, risk_level, intelligence_signals, file_content, file_mime_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (id, user_id, name, type, status, node_count, uploaded_at, dataset_name, text_path, extracted_text, file_path, risk_signals, risk_level, intelligence_signals, file_content, file_mime_type, content_hash, request_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc["id"],
@@ -277,8 +366,10 @@ def save_document(user_id: str, doc: dict[str, Any]) -> None:
                 json.dumps(doc.get("risk_signals") or {}),
                 doc.get("risk_level", "none"),
                 json.dumps(doc.get("intelligence_signals") or {}),
-                Binary(doc["file_content"]) if doc.get("file_content") else None,
+                doc["file_content"] if doc.get("file_content") else None,
                 doc.get("file_mime_type"),
+                doc.get("content_hash", ""),
+                doc.get("request_key"),
             ),
         )
 
@@ -344,10 +435,10 @@ def list_documents(
     with _connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals
+            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals, failure_reason, content_hash, version, indexed_at
             {text_columns}
             FROM documents
-            WHERE user_id = %s
+            WHERE user_id = %s AND status <> 'deleted'
             ORDER BY uploaded_at DESC
             """,
             (user_id,),
@@ -378,7 +469,7 @@ def list_documents_page(
 ) -> dict[str, Any]:
     safe_limit = max(1, min(int(limit), DOCUMENT_PAGE_SIZE_MAX))
     safe_offset = max(0, int(offset))
-    filters = ["user_id = %s"]
+    filters = ["user_id = %s", "status <> 'deleted'"]
     params: list[Any] = [user_id]
     if doc_type:
         filters.append("type = %s")
@@ -392,7 +483,7 @@ def list_documents_page(
         ).fetchone()["count"]
         rows = conn.execute(
             f"""
-            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals
+            SELECT id, name, type, status, node_count, uploaded_at, dataset_name, text_path, file_path, risk_signals, risk_level, intelligence_signals, failure_reason, content_hash, version, indexed_at
             FROM documents
             WHERE {where_clause}
             ORDER BY uploaded_at DESC
@@ -424,7 +515,7 @@ def get_document_file_for_user(user_id: str, doc_id: str) -> dict[str, Any] | No
             """
             SELECT id, name, file_path, file_content, file_mime_type
             FROM documents
-            WHERE user_id = %s AND id = %s
+            WHERE user_id = %s AND id = %s AND status NOT IN ('deleted','delete_pending','delete_failed')
             """,
             (user_id, doc_id),
         ).fetchone()
@@ -450,7 +541,7 @@ def _document_row(row: dict[str, Any]) -> dict[str, Any]:
 def list_alert_documents(user_id: str) -> list[dict[str, Any]]:
     severity_rank = {"high": 3, "medium": 2, "low": 1}
     alerts = [
-        doc for doc in list_documents(user_id)
+        doc for doc in active_documents(user_id, include_text=False)
         if doc.get("risk_level") != "none"
     ]
     return sorted(
@@ -472,7 +563,7 @@ def delete_document(user_id: str, dataset_name: str) -> None:
 
 
 def user_dataset_names(user_id: str) -> list[str]:
-    return [doc["dataset_name"] for doc in list_documents(user_id)]
+    return [doc["dataset_name"] for doc in active_documents(user_id, include_text=False)]
 
 
 def dataset_names_for_documents(user_id: str, docs: list[dict[str, Any]]) -> list[str]:
@@ -494,11 +585,12 @@ def save_chat_message(
     confidence: float | None = None,
 ) -> None:
     with _connect() as conn:
+        sequence = conn.execute('UPDATE users SET chat_sequence=chat_sequence+1 WHERE id=%s RETURNING chat_sequence',(user_id,)).fetchone()['chat_sequence']
         conn.execute(
             """
             INSERT INTO chat_messages
-            (id, user_id, role, content, reasoning, sources, related_memories, confidence)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_id, role, content, reasoning, sources, related_memories, confidence, sequence)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 secrets.token_hex(16),
@@ -515,6 +607,7 @@ def save_chat_message(
                     for m in (related_memories or [])
                 ]),
                 confidence,
+                sequence,
             ),
         )
 
@@ -523,19 +616,26 @@ def list_chat_messages(user_id: str, limit: int = 60) -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT role, content, reasoning, sources, related_memories, confidence
+            SELECT role, content, reasoning, sources, related_memories, confidence, payload
             FROM chat_messages
             WHERE user_id = %s
-            ORDER BY created_at DESC
+            ORDER BY sequence DESC
             LIMIT %s
             """,
             (user_id, limit),
         ).fetchall()
+    active_ids = {d["id"] for d in list_documents(user_id) if d["status"] not in {"delete_pending","delete_failed","deleted"}}
     messages: list[dict[str, Any]] = []
     for row in reversed(rows):
         item = dict(row)
         item["sources"] = json.loads(item["sources"] or "[]")
         item["related_memories"] = json.loads(item["related_memories"] or "[]")
+        payload = json.loads(item.pop('payload', '{}') or '{}')
+        item.update(payload)
+        item['confidence'] = None  # legacy numbers were never calibrated
+        for source in item.get('sources') or []:
+            document_id = source.get('document_id')
+            source['available'] = bool(document_id and document_id in active_ids)
         messages.append(item)
     return messages
 
@@ -570,6 +670,42 @@ def _chat_terms(query: str) -> list[str]:
     ][:12]
 
 
+def revoke_token(token: str) -> None:
+    with _connect() as conn:
+        conn.execute('DELETE FROM sessions WHERE token_hash=%s',(hashlib.sha256(token.encode()).hexdigest(),))
+
+
+def save_chat_turn(user_id: str, question: str, response: dict) -> None:
+    """Allocate adjacent sequence numbers and commit both messages together."""
+    with _connect() as conn:
+        last = conn.execute('UPDATE users SET chat_sequence=chat_sequence+2 WHERE id=%s RETURNING chat_sequence',(user_id,)).fetchone()['chat_sequence']
+        for sequence, role, content, payload in [
+            (last-1,'user',question,{}), (last,'assistant',response['answer'],response),
+        ]:
+            conn.execute('''INSERT INTO chat_messages
+                (id,user_id,role,content,reasoning,sources,related_memories,confidence,sequence,payload)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                (secrets.token_hex(16),user_id,role,content,payload.get('reasoning'),json.dumps(payload.get('sources',[])),
+                 '[]',None,sequence,json.dumps(payload)))
+
+
+def document_state(user_id: str, doc_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute('SELECT * FROM documents WHERE user_id=%s AND id=%s',(user_id,doc_id)).fetchone()
+    return dict(row) if row else None
+
+
+def set_document_state(user_id: str, doc_id: str, status: str, failure_reason: str | None = None) -> None:
+    with _connect() as conn:
+        conn.execute('UPDATE documents SET status=%s, failure_reason=%s, version=version+1 WHERE user_id=%s AND id=%s',
+                     (status,failure_reason,user_id,doc_id))
+
+
+def active_documents(user_id: str, include_text: bool = True) -> list[dict]:
+    return [d for d in list_documents(user_id,include_text=include_text)
+            if d['status'] not in {'delete_pending','delete_failed','deleted'}]
+
+
 def search_chat_messages(user_id: str, query: str, limit: int = 6) -> list[dict[str, Any]]:
     terms = _chat_terms(query)
     if not terms:
@@ -582,7 +718,7 @@ def search_chat_messages(user_id: str, query: str, limit: int = 6) -> list[dict[
             SELECT role, content, reasoning, sources, related_memories, confidence, created_at
             FROM chat_messages
             WHERE user_id = %s
-            ORDER BY created_at DESC
+            ORDER BY sequence DESC
             LIMIT 300
             """,
             (user_id,),

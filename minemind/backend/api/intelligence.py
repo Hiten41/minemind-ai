@@ -33,29 +33,5 @@ async def get_memory_profile(user: dict[str, str] = Depends(current_user)):
 
 @router.post("/api/agents/run", response_model=QueryResponse)
 async def run_agent(request: QueryRequest, user: dict[str, str] = Depends(current_user)):
-    mode = detect_agent_mode(request.question)
-    chunks = hybrid_retrieve(user["id"], request.question, mode=mode, limit=8)
-    citations = citations_from_chunks(chunks)
-    if citations:
-        answer = (
-            "From your uploaded documents: "
-            f"I found evidence for `{mode}` in {len(citations)} passage(s). "
-            "Use the action plan below and open the cited sources for details."
-        )
-        reasoning = "The agent selected passages by hybrid keyword and mining-domain signal scoring."
-    else:
-        answer = (
-            "I could not find this in your uploaded documents. General answer: "
-            f"No stored document evidence matched `{mode}` strongly enough yet."
-        )
-        reasoning = "No uploaded-document evidence was found for this agent mode."
-    return QueryResponse(
-        answer=answer,
-        reasoning=reasoning,
-        sources=[citation.as_source() for citation in citations[:5]],
-        related_memories=[],
-        confidence=0.82 if citations else 0.45,
-        mode=mode,
-        action_plan=action_plan_for_mode(mode, citations),
-        confidence_notes=confidence_notes(citations),
-    )
+    from api.query import query_ai
+    return await query_ai(request, user)

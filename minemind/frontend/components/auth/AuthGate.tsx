@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { clearAuthToken, getAuthToken, getCurrentUser } from '@/lib/api'
+import { ApiError, clearAuthToken, getAuthToken, getCurrentUser } from '@/lib/api'
 
 const publicPaths = new Set(['/login'])
 
@@ -14,19 +14,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    const timeout = window.setTimeout(() => {
-      if (!cancelled) setReady(true)
-    }, 2500)
 
     async function checkSession() {
       if (publicPaths.has(pathname)) {
-        window.clearTimeout(timeout)
         setReady(true)
         return
       }
 
       if (!getAuthToken()) {
-        window.clearTimeout(timeout)
         setReady(false)
         router.replace('/login')
         return
@@ -35,15 +30,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       try {
         await getCurrentUser()
         if (!cancelled) {
-          window.clearTimeout(timeout)
           setReady(true)
         }
-      } catch {
+      } catch (error) {
         if (cancelled) return
-        window.clearTimeout(timeout)
-        setReady(false)
-        clearAuthToken()
-        router.replace('/login')
+        if (error instanceof ApiError && error.status === 401) {
+          setReady(false)
+          clearAuthToken()
+          router.replace('/login')
+          return
+        }
+        // A temporary network failure must not silently sign a user out.
+        setReady(true)
       }
     }
 
@@ -52,7 +50,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true
-      window.clearTimeout(timeout)
     }
   }, [pathname, router])
 

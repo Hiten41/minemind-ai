@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from services.auth_service import list_chat_messages, list_documents
+from services.auth_service import list_chat_messages, active_documents as list_documents
 
 
 SAFETY_VIOLATION_KEYWORDS = (
@@ -104,16 +104,24 @@ def risk_level_for_signals(signals: dict[str, int]) -> str:
     return "none"
 
 
-def scan_text_for_risk_alert(text: str) -> dict[str, Any]:
-    signals = {
-        "violations": _keyword_count(text, SAFETY_VIOLATION_KEYWORDS),
-        "equipment": _keyword_count(text, EQUIPMENT_FAILURE_KEYWORDS),
-        "hazards": _keyword_count(text, HAZARD_KEYWORDS),
-    }
-    return {
-        "risk_signals": signals,
-        "risk_level": risk_level_for_signals(signals),
-    }
+def scan_text_for_risk_alert(text: str, doc_type: str = "auto") -> dict[str, Any]:
+    """Unreviewed textual mentions, never a mine risk assessment.
+
+    Conservative clause-level negation/modal filtering deliberately favors unknown.
+    Manuals and regulations contain instructions, not verified event records.
+    """
+    groups = {"violations": SAFETY_VIOLATION_KEYWORDS,
+              "equipment": EQUIPMENT_FAILURE_KEYWORDS, "hazards": HAZARD_KEYWORDS}
+    signals = dict.fromkeys(groups, 0)
+    references = dict.fromkeys(groups, 0)
+    for clause in re.split(r"[.!?;\n]+|\bbut\b|\bhowever\b", text.lower()):
+        reference = doc_type in {"manual", "regulation"} or bool(re.search(
+            r"\b(no|not|never|without|denies|denied|absent|prevent|prevention|if|may|might|could|shall|should|must|training|drill|hypothetical)\b", clause))
+        for category, keywords in groups.items():
+            count = _keyword_count(clause, keywords)
+            (references if reference else signals)[category] += count
+    return {"risk_signals": signals, "risk_level": risk_level_for_signals(signals),
+            "reference_signals": references, "review_status": "unreviewed"}
 
 AGENT_MODE_KEYWORDS = {
     "risk_audit": {"risk", "hazard", "unsafe", "danger", "audit", "prevent"},
@@ -151,50 +159,21 @@ class Citation:
 
 
 def document_text(doc: dict[str, Any]) -> str:
-    extracted_text = doc.get("extracted_text")
-    if extracted_text:
-        return str(extracted_text)
-    text_path = doc.get("text_path")
-    if not text_path:
-        return ""
-    path = Path(str(text_path))
-    if not path.exists():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return ""
+    # Only authenticated database rows provide text. Never follow legacy paths.
+    return str(doc.get("extracted_text") or "")
 
 
 def classify_document_type(doc: dict[str, Any], text: str | None = None) -> str:
-    stored_type = str(doc.get("type") or "regulation").lower()
-    if stored_type == "incident":
+    stored_type = str(doc.get("type") or "auto").lower()
+    if stored_type in {"incident", "manual", "regulation", "maintenance", "shift"}:
         return stored_type
-
-    name = str(doc.get("name") or "").lower()
-    readable_text = text if text is not None else document_text(doc)
-    sample = readable_text.lower()[:50000]
-
-    if "accident" in name or "incident" in name:
-        return "incident"
-    accident_table_rows = len(
-        re.findall(
-            r"\|\s*(?:fire|gas|coal|roof|inundation|blasting|methane|explosion).{0,100}\|\s*\d+\s*fatal",
-            sample,
-        )
-    )
-    if accident_table_rows >= 2:
-        return "incident"
-    dated_entries = len(re.findall(r"\b\d{2}/\d{2}/\d{4}\b", sample))
-    marker_count = sum(marker in sample for marker in INCIDENT_MARKERS)
-    if dated_entries >= 5 and marker_count >= 4:
-        return "incident"
-
-    equipment_signals = extract_document_signals(readable_text).get("equipment", [])
-    if stored_type == "regulation" and len(equipment_signals) >= 8 and not any(term in sample for term in ("regulation", "rules", "act")):
+    sample = (text if text is not None else document_text(doc)).lower()[:50000]
+    if re.search(r"\b(manual|training|drill|handbook)\b", sample):
         return "manual"
-
-    return stored_type
+    if re.search(r"\b(regulation|regulations|shall|statutory)\b", sample):
+        return "regulation"
+    # Automatic classification never asserts that a document proves an incident.
+    return "manual"
 
 
 def detect_agent_mode(question: str) -> str:
@@ -510,45 +489,17 @@ def _summary_from_text(text: str, title: str) -> str:
     return " ".join(sentence for _score, sentence in sorted(scored, reverse=True)[:2])
 
 
-def risk_signals(
-    user_id: str,
-    source_documents: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    signals: dict[str, dict[str, Any]] = defaultdict(lambda: {
-        "name": "",
-        "severity": "medium",
-        "count": 0,
-        "documents": set(),
-        "recommended_action": "",
-    })
-    severity_terms = {
-        "critical": {"fatal", "death", "explosion", "inundation", "collapse"},
-        "high": {"fire", "methane", "roof fall", "injury", "blasting"},
-    }
-    for doc in source_documents if source_documents is not None else list_documents(user_id, include_text=True):
-        text = document_text(doc).lower()
-        for term in MINE_TERMS["hazards"]:
-            count = text.count(term)
-            if not count:
-                continue
-            row = signals[term]
-            row["name"] = term
-            row["count"] += count
-            row["documents"].add(str(doc.get("name")))
-            if term in severity_terms["critical"]:
-                row["severity"] = "critical"
-            elif term in severity_terms["high"] and row["severity"] != "critical":
-                row["severity"] = "high"
-            row["recommended_action"] = _recommended_action(term)
-    ordered = sorted(
-        signals.values(),
-        key=lambda item: ({"critical": 3, "high": 2, "medium": 1}[str(item["severity"])], int(item["count"])),
-        reverse=True,
-    )
-    return [
-        {**item, "documents": sorted(item["documents"])[:5]}
-        for item in ordered[:12]
-    ]
+def risk_signals(user_id: str, source_documents: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    rows = []
+    docs = source_documents if source_documents is not None else list_documents(user_id, include_text=True)
+    for doc in docs:
+        result = scan_text_for_risk_alert(document_text(doc), str(doc.get('type', 'auto')))
+        for name, count in result['risk_signals'].items():
+            if count:
+                rows.append({'name': name, 'severity': 'unreviewed', 'count': count,
+                             'documents': [str(doc['name'])],
+                             'recommended_action': 'Review the source passage; textual signals do not establish operational risk.'})
+    return sorted(rows, key=lambda row: row['count'], reverse=True)[:12]
 
 
 def _recommended_action(term: str) -> str:

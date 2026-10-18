@@ -37,12 +37,13 @@ If using Render Blueprint, create a new Blueprint from this GitHub repo. The roo
 - Backend root directory: `minemind/backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-- Persistent disk at `/data/minemind`
+- Ephemeral working storage at `/tmp/minemind`; uploaded-document records and content are stored in PostgreSQL
 - CORS regex for Vercel preview/production domains
 
 You still need to add these secret values in Render:
 
 ```dotenv
+DATABASE_URL=postgresql://user:password@host/database?sslmode=require
 GROQ_API_KEY=replace-with-your-groq-key
 COGNEE_BASE_URL=https://your-cognee-tenant.aws.cognee.ai
 COGNEE_API_KEY=replace-with-your-cognee-cloud-key
@@ -54,6 +55,7 @@ Set these environment variables on the backend host:
 APP_ENV=production
 FRONTEND_ORIGINS=https://your-frontend-domain.com
 AUTH_SECRET=replace-with-a-long-random-secret
+DATABASE_URL=postgresql://user:password@host/database?sslmode=require
 MINEMIND_STORAGE_DIR=/data/minemind
 
 LLM_PROVIDER=groq
@@ -85,13 +87,9 @@ If your host does not set `PORT`, use a fixed port such as `8001`.
 
 ## Persistent Storage
 
-`MINEMIND_STORAGE_DIR` must point to persistent disk storage. MineMind stores:
+On the included Render free plan, `/tmp/minemind` is ephemeral. PostgreSQL stores user accounts, chats, document metadata, extracted text, and original uploaded file content, so these remain available after a redeploy. Cognee Cloud stores the long-term memory graph when configured.
 
-- SQLite auth/session/document records
-- extracted uploaded document text
-- local Cognee graph/vector data, only if `COGNEE_BASE_URL` is not set
-
-Without persistent storage, user accounts and uploaded document metadata can disappear after redeploys. If Cognee Cloud is enabled, the long-term memory graph is stored in Cognee Cloud, but MineMind still needs persistent backend storage for users, chats, document records, risk alerts, and extracted text fallback search.
+If you deploy with local embedded Cognee instead of Cognee Cloud, use a paid host plan with a persistent disk and set `MINEMIND_STORAGE_DIR` to that mount. Render free services may cold-start after inactivity; use a paid plan if low first-request latency is required.
 
 ## Cognee Memory
 
@@ -102,11 +100,11 @@ COGNEE_BASE_URL=https://your-cognee-tenant.aws.cognee.ai
 COGNEE_API_KEY=your-cognee-api-key
 ```
 
-When both variables are present, MineMind uses Cognee Cloud for document ingestion, recall, temporal recall, graph data, improve, and forget operations. This avoids relying on a laptop-local `.cognee` directory after deployment.
+When both variables are present, MineMind uses Cognee Cloud for document ingestion, recall, graph data, improve, and forget operations. This avoids relying on a laptop-local `.cognee` directory after deployment.
 
 If you leave `COGNEE_BASE_URL` or `COGNEE_API_KEY` empty, MineMind falls back to embedded local Cognee on the backend host.
 
-Note: Cognee Cloud accepted normal chunk recall in verification. If the Cloud temporal endpoint returns a provider-side error, MineMind automatically falls back to Cloud chunk recall for that temporal question so users still get memory-backed answers instead of empty context.
+Query retrieval combines local lexical candidates with authorized semantic candidates. Provider outages are reported explicitly; dedicated temporal filtering is not implemented.
 
 ## Local Cognee Embeddings
 
@@ -140,3 +138,5 @@ After you know your deployed frontend URL, backend URL, Groq key, and embedding 
 ```
 
 This creates ignored files under `deploy-env/` with the exact variables to paste into your hosting dashboards. It also generates a strong `AUTH_SECRET` automatically.
+
+Production CORS requires exact owned `FRONTEND_ORIGINS`; origin regexes are ignored in production. Read `backend/MIGRATIONS.md` before rollout.

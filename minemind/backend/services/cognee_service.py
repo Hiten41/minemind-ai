@@ -55,8 +55,15 @@ os.environ.setdefault("EMBEDDING_TOKENIZER", _default_embedding_tokenizer())
 os.environ.setdefault("HUGGINGFACE_TOKENIZER", os.environ["EMBEDDING_TOKENIZER"])
 
 MemoryChunk = dict[str, str]
+
+
+class MemoryProviderError(RuntimeError):
+    """Retrieval unavailable, distinct from a successful empty search."""
+
 _LOCAL_COGNEE: Any | None = None
 _LOCAL_SEARCH_TYPE: Any | None = None
+_LOCAL_COGNEE_CONFIGURED = False
+_LOCAL_COGNEE_CONFIG_LOCK = asyncio.Lock()
 PERF_DEBUG = os.getenv("MINEMIND_PERF_DEBUG", "false").lower() == "true"
 PERF_LOG_PATH = Path(
     os.getenv(
@@ -65,6 +72,9 @@ PERF_LOG_PATH = Path(
     )
 )
 COGNEE_SEARCH_ONLY_CONTEXT = os.getenv("COGNEE_SEARCH_ONLY_CONTEXT", "true").lower() != "false"
+COGNEE_SEARCH_TIMEOUT_SECONDS = float(
+    os.getenv("COGNEE_SEARCH_TIMEOUT_SECONDS", "12")
+)
 
 
 def _perf_ms(start: float) -> float:
@@ -137,13 +147,17 @@ def _raise_for_cloud_response(response: requests.Response) -> None:
         raise RuntimeError(f"Cognee Cloud request failed: {response.status_code} {detail}") from exc
 
 
-async def _cloud_post_json(path: str, payload: dict[str, Any]) -> Any:
+async def _cloud_post_json(
+    path: str,
+    payload: dict[str, Any],
+    timeout_seconds: float = 120,
+) -> Any:
     def request() -> Any:
         response = requests.post(
             _cloud_url(path),
             json=payload,
             headers=_cloud_headers(),
-            timeout=120,
+            timeout=timeout_seconds,
         )
         _raise_for_cloud_response(response)
         if not response.content:
@@ -252,65 +266,74 @@ def _cloud_results_to_chunks(results: Any) -> list[MemoryChunk]:
 
 
 async def initialize_cognee():
-    """Configure Cognee to use Groq for LLM tasks and Ollama for embeddings."""
+    """Configure the embedded Cognee client only when it is actually needed."""
+    global _LOCAL_COGNEE_CONFIGURED
     if using_cognee_cloud():
         return
 
-    local_cognee, _ = _local_cognee()
-    local_cognee.config.system_root_directory(str(COGNEE_ROOT))
-    local_cognee.config.data_root_directory(str(COGNEE_ROOT / "data"))
+    if _LOCAL_COGNEE_CONFIGURED:
+        return
 
-    llm_provider = _env("LLM_PROVIDER", "custom")
-    llm_model = _env("GROQ_MODEL") or _env("LLM_MODEL", DEFAULT_GROQ_MODEL)
-    llm_api_key = _env("GROQ_API_KEY") or _env("LLM_API_KEY")
-    llm_endpoint = _env("GROQ_BASE_URL") or _env(
-        "LLM_ENDPOINT",
-        "https://api.groq.com/openai/v1"
-    )
+    async with _LOCAL_COGNEE_CONFIG_LOCK:
+        if _LOCAL_COGNEE_CONFIGURED:
+            return
 
-    if llm_provider == "groq":
-        llm_model = _normalize_groq_model(llm_model)
+        local_cognee, _ = _local_cognee()
+        local_cognee.config.system_root_directory(str(COGNEE_ROOT))
+        local_cognee.config.data_root_directory(str(COGNEE_ROOT / "data"))
 
-    cognee_llm_provider = (
-        "custom" if llm_provider in {"groq", "custom"} else llm_provider
-    )
-    cognee_llm_model = (
-        f"groq/{llm_model}"
-        if llm_provider == "groq" and not llm_model.startswith("groq/")
-        else llm_model
-    )
-
-    local_cognee.config.set_llm_provider(cognee_llm_provider)
-    local_cognee.config.set_llm_model(cognee_llm_model)
-    local_cognee.config.set_llm_endpoint(llm_endpoint)
-    if llm_api_key:
-        local_cognee.config.set_llm_api_key(llm_api_key)
-    if llm_provider == "groq":
-        os.environ.pop("LLM_API_KEY", None)
-
-    local_cognee.config.set_embedding_provider(_env("EMBEDDING_PROVIDER", "ollama"))
-    local_cognee.config.set_embedding_model(_env("EMBEDDING_MODEL", "nomic-embed-text"))
-    local_cognee.config.set_embedding_endpoint(
-        _env("EMBEDDING_ENDPOINT", "http://localhost:11434/api/embed")
-    )
-    local_cognee.config.set_embedding_dimensions(_env("EMBEDDING_DIMENSIONS", "768"))
-    local_cognee.config.set_embedding_config({
-        "huggingface_tokenizer": _env(
-            "EMBEDDING_TOKENIZER",
-            _default_embedding_tokenizer()
+        llm_provider = _env("LLM_PROVIDER", "custom")
+        llm_model = _env("GROQ_MODEL") or _env("LLM_MODEL", DEFAULT_GROQ_MODEL)
+        llm_api_key = _env("GROQ_API_KEY") or _env("LLM_API_KEY")
+        llm_endpoint = _env("GROQ_BASE_URL") or _env(
+            "LLM_ENDPOINT",
+            "https://api.groq.com/openai/v1"
         )
-    })
 
-    local_cognee.config.set_vector_db_provider(
-        _env("VECTOR_DB_PROVIDER") or _env("COGNEE_VECTOR_DB_PROVIDER", "lancedb")
-    )
-    graph_provider = (
-        _env("GRAPH_DATABASE_PROVIDER")
-        or _env("COGNEE_GRAPH_DB_PROVIDER", "kuzu")
-    )
-    if graph_provider == "networkx":
-        graph_provider = "kuzu"
-    local_cognee.config.set_graph_database_provider(graph_provider)
+        if llm_provider == "groq":
+            llm_model = _normalize_groq_model(llm_model)
+
+        cognee_llm_provider = (
+            "custom" if llm_provider in {"groq", "custom"} else llm_provider
+        )
+        cognee_llm_model = (
+            f"groq/{llm_model}"
+            if llm_provider == "groq" and not llm_model.startswith("groq/")
+            else llm_model
+        )
+
+        local_cognee.config.set_llm_provider(cognee_llm_provider)
+        local_cognee.config.set_llm_model(cognee_llm_model)
+        local_cognee.config.set_llm_endpoint(llm_endpoint)
+        if llm_api_key:
+            local_cognee.config.set_llm_api_key(llm_api_key)
+        if llm_provider == "groq":
+            os.environ.pop("LLM_API_KEY", None)
+
+        local_cognee.config.set_embedding_provider(_env("EMBEDDING_PROVIDER", "ollama"))
+        local_cognee.config.set_embedding_model(_env("EMBEDDING_MODEL", "nomic-embed-text"))
+        local_cognee.config.set_embedding_endpoint(
+            _env("EMBEDDING_ENDPOINT", "http://localhost:11434/api/embed")
+        )
+        local_cognee.config.set_embedding_dimensions(_env("EMBEDDING_DIMENSIONS", "768"))
+        local_cognee.config.set_embedding_config({
+            "huggingface_tokenizer": _env(
+                "EMBEDDING_TOKENIZER",
+                _default_embedding_tokenizer()
+            )
+        })
+
+        local_cognee.config.set_vector_db_provider(
+            _env("VECTOR_DB_PROVIDER") or _env("COGNEE_VECTOR_DB_PROVIDER", "lancedb")
+        )
+        graph_provider = (
+            _env("GRAPH_DATABASE_PROVIDER")
+            or _env("COGNEE_GRAPH_DB_PROVIDER", "kuzu")
+        )
+        if graph_provider == "networkx":
+            graph_provider = "kuzu"
+        local_cognee.config.set_graph_database_provider(graph_provider)
+        _LOCAL_COGNEE_CONFIGURED = True
 
 
 async def ingest_document(
@@ -337,15 +360,16 @@ async def ingest_document(
             "datasets": [dataset_name],
             "runInBackground": False,
         })
-        return max(10, len(text) // 500)
+        return (len(text.strip()) + 1199) // 1200
 
+    await initialize_cognee()
     local_cognee, _ = _local_cognee()
     await local_cognee.remember(
         indexed_text,
         dataset_name=dataset_name,
         run_in_background=False
     )
-    return max(10, len(text) // 500)
+    return (len(text.strip()) + 1199) // 1200
 
 
 def _metadata_value(metadata: object, keys: list[str]) -> str:
@@ -430,7 +454,7 @@ async def query_memory(
                 "onlyContext": COGNEE_SEARCH_ONLY_CONTEXT,
                 "verbose": False,
                 "includeReferences": True,
-            })
+            }, timeout_seconds=COGNEE_SEARCH_TIMEOUT_SECONDS)
             request_ms = _perf_ms(request_start)
 
             parse_start = time.perf_counter()
@@ -451,6 +475,7 @@ async def query_memory(
             })
             return chunks
 
+        await initialize_cognee()
         recall_start = time.perf_counter()
         local_cognee, search_type = _local_cognee()
         results = await local_cognee.recall(
@@ -480,8 +505,8 @@ async def query_memory(
         })
         return chunks
     except Exception as e:
-        print(f"Recall error: {e}")
-        return []
+        # Normalize third-party SDK/network errors at this integration boundary.
+        raise MemoryProviderError('Memory retrieval is unavailable') from e
 
 
 async def query_memory_temporal(question: str, datasets: list) -> list:
@@ -517,6 +542,7 @@ async def query_memory_temporal(question: str, datasets: list) -> list:
                 for chunk in _cloud_results_to_chunks(results)
             ]
 
+        await initialize_cognee()
         local_cognee, search_type = _local_cognee()
         results = await local_cognee.recall(
             query_text=question,
@@ -550,6 +576,7 @@ async def enrich_memory(datasets: list[str] | None = None) -> bool:
                 })
             return True
 
+        await initialize_cognee()
         local_cognee, _ = _local_cognee()
         await local_cognee.improve()
         return True
@@ -573,6 +600,7 @@ async def delete_dataset(dataset_name: str) -> bool:
             })
             return True
 
+        await initialize_cognee()
         local_cognee, _ = _local_cognee()
         await local_cognee.forget(dataset=dataset_name)
         return True
@@ -631,6 +659,7 @@ async def get_graph_data(datasets: list[str] | None = None) -> dict[str, list[di
                     })
             return {"nodes": nodes, "edges": edges}
 
+        await initialize_cognee()
         local_cognee, _ = _local_cognee()
         results = await local_cognee.recall(
             query_text="mining operations safety equipment",

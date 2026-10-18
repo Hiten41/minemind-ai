@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from services.auth_service import _connect, list_documents
+from services.auth_service import _connect, active_documents as list_documents
 from services.settings import STORAGE_ROOT
 
 
@@ -48,7 +48,7 @@ def store_document_text(user_id: str, doc_id: str, text: str) -> str:
 
 
 def estimate_node_count(text: str) -> int:
-    return max(10, len(text) // 500)
+    return (len(text.strip()) + 1199) // 1200
 
 
 def _tokens(value: str) -> list[str]:
@@ -64,6 +64,11 @@ def _tokens(value: str) -> list[str]:
 
 def _expanded_terms(question: str) -> list[str]:
     terms = set(_tokens(question))
+    # Normalize known mining vocabulary without stemming unrelated words.
+    for term in tuple(terms):
+        singular = term[:-1] if term.endswith('s') else term
+        if singular in MINING_SYNONYMS:
+            terms.add(singular)
     lowered = question.lower()
     for key, synonyms in MINING_SYNONYMS.items():
         if key in lowered or key in terms:
@@ -80,45 +85,12 @@ def _read_text(path: Path) -> str:
 
 
 def _legacy_text_for_doc(doc: dict) -> str:
-    if not LEGACY_TEXT_ROOT.exists():
-        return ""
-
-    doc_terms = _tokens(Path(str(doc.get("name", ""))).stem)
-    if not doc_terms:
-        return ""
-
-    best_score = 0
-    best_text = ""
-    for path in LEGACY_TEXT_ROOT.glob("text_*.txt"):
-        if path.stat().st_size < 1000:
-            continue
-        text = _read_text(path)
-        head = text[:12000].lower()
-        score = 0
-        for term in doc_terms:
-            if term in head:
-                score += 2 if term.isdigit() else 1
-        if "regulations" in head and "regulation" in doc_terms:
-            score += 1
-        if "rules" in head and "rules" in doc_terms:
-            score += 1
-        if score > best_score:
-            best_score = score
-            best_text = text
-
-    return best_text if best_score >= 2 else ""
+    # Missing owned text requires recovery from this document's stored bytes or re-upload.
+    return ""
 
 
 def _document_text(doc: dict) -> str:
-    extracted_text = doc.get("extracted_text")
-    if extracted_text:
-        return str(extracted_text)
-    text_path = doc.get("text_path")
-    if text_path:
-        path = Path(str(text_path))
-        if path.exists():
-            return _read_text(path)
-    return _legacy_text_for_doc(doc)
+    return str(doc.get("extracted_text") or "")
 
 
 def rank_relevant_documents(
@@ -201,9 +173,9 @@ def _best_windows(doc_name: str, text: str, terms: list[str], limit: int) -> lis
     return windows
 
 
-def search_uploaded_texts(
-    user_id: str,
+def search_document_texts(
     question: str,
+    documents: list[dict],
     limit: int = 4,
     allowed_sources: set[str] | None = None,
 ) -> list[dict[str, str]]:
@@ -212,7 +184,7 @@ def search_uploaded_texts(
         return []
 
     results: list[tuple[int, dict[str, str]]] = []
-    for doc in list_documents(user_id, include_text=True):
+    for doc in documents:
         doc_name = str(doc["name"])
         if allowed_sources and doc_name.lower() not in allowed_sources:
             continue
@@ -229,6 +201,21 @@ def search_uploaded_texts(
         chunk
         for _score, chunk in sorted(results, key=lambda item: item[0], reverse=True)[:limit]
     ]
+
+
+def search_uploaded_texts(
+    user_id: str,
+    question: str,
+    limit: int = 4,
+    allowed_sources: set[str] | None = None,
+) -> list[dict[str, str]]:
+    """Compatibility wrapper for callers that do not already have document text."""
+    return search_document_texts(
+        question,
+        list_documents(user_id, include_text=True),
+        limit,
+        allowed_sources,
+    )
 
 
 def repair_document_node_counts(

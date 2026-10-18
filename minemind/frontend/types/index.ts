@@ -6,6 +6,7 @@ export interface Document {
   node_count: number
   uploaded_at: string
   dataset_name: string
+  failure_reason?: string | null
   risk_signals?: RiskSignals
   risk_level?: RiskLevel
 }
@@ -59,14 +60,24 @@ export interface DocumentPage {
   has_more: boolean
 }
 
+export interface ContentPart {
+  text: string
+  source_ids: string[]
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  content_parts?: ContentPart[]
   reasoning?: string
   sources?: Source[]
   related_memories?: RelatedMemory[]
-  confidence?: number
-  query_type?: 'semantic' | 'temporal'
+  confidence?: number | null
+  query_type?: string
+  evidence_status?: 'source_excerpts' | 'partial' | 'conflicting' | 'unsupported' | 'not_required'
+  scope_mode?: 'all' | 'selected' | 'auto'
+  effective_document_ids?: string[]
+  retrieval_diagnostics?: Record<string, unknown>
 }
 
 export interface User {
@@ -82,6 +93,13 @@ export interface AuthResponse {
 }
 
 export interface Source {
+  document_id: string
+  chunk_id: string
+  source_id: string
+  document_version: string
+  page?: number | null
+  section?: string | null
+  available?: boolean
   title: string
   excerpt: string
   relevance: number
@@ -113,15 +131,22 @@ export interface AnalyticsData {
   equipment_count: number
   memory_nodes: number
   recent_activity: Record<string, string>[]
+  document_uploads_per_month?: { month: string; count: number }[]
+  incident_document_count?: number
   incidents_per_month: { month: string; count: number }[]
   document_types: { name: string; value: number }[]
 }
 
 export interface QueryResponse {
   answer: string
+  content_parts?: ContentPart[]
   reasoning: string
   sources: Source[]
   related_memories: RelatedMemory[]
-  confidence: number
-  query_type?: 'semantic' | 'temporal'
+  confidence: number | null
+  query_type?: string
+  evidence_status?: 'source_excerpts' | 'partial' | 'conflicting' | 'unsupported' | 'not_required'
+  scope_mode?: 'all' | 'selected' | 'auto'
+  effective_document_ids?: string[]
+  retrieval_diagnostics?: Record<string, unknown>
 }

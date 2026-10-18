@@ -31,7 +31,7 @@ export default function MemoryUploadRail({
       try {
         const doc = await uploadDocument(file, 'incident')
         setState('done')
-        setMessage(`${doc.node_count} memory nodes created`)
+        setMessage(`${doc.node_count} estimated text chunks; indexing queued`)
         onUploadComplete?.(doc)
         window.setTimeout(() => {
           setState('idle')

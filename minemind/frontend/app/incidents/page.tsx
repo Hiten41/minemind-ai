@@ -225,7 +225,7 @@ export default function IncidentsPage() {
                         {item.title}
                       </h2>
                       <div className="mt-6 flex items-center justify-between gap-3 text-sm">
-                        <span className="text-white/34">Memory nodes</span>
+                        <span className="text-white/34">Estimated text chunks</span>
                         <span className="font-medium text-white/72">{item.nodes.toLocaleString()}</span>
                       </div>
                     </motion.button>
@@ -297,7 +297,7 @@ export default function IncidentsPage() {
                   {[
                     ['Status', selectedCase.status],
                     ['Uploaded', selectedCase.date],
-                    ['Memory nodes', selectedCase.nodes.toLocaleString()],
+                    ['Estimated text chunks', selectedCase.nodes.toLocaleString()],
                     ['Dataset', selectedCase.datasetName]
                   ].map(([label, value]) => (
                     <div key={label} className="grid gap-2 px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)]">

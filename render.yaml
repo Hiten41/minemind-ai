@@ -24,6 +24,10 @@ services:
         value: groq
       - key: LLM_MODEL
         value: llama-3.1-8b-instant
+      - key: ANSWER_LLM_MODEL
+        value: qwen/qwen3.8-27b
+      - key: ANSWER_MAX_TOKENS
+        value: 1000
       - key: GROQ_API_KEY
         sync: false
       - key: COGNEE_BASE_URL

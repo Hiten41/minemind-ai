@@ -1,9 +1,10 @@
 'use client'
 
 import { Bot, ChevronDown, UserRound } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
-import type { ChatMessage } from '@/types'
+import type { ChatMessage, ContentPart } from '@/types'
+import EvidenceSource from './EvidenceSource'
 
 function evidenceTitle(title: string, index: number) {
   const cleanTitle = title.trim()
@@ -15,6 +16,59 @@ function evidenceTitle(title: string, index: number) {
 
 export default function MessageBubble({ message }: { message: ChatMessage }) {
   const [showReasoning, setShowReasoning] = useState(false)
+  const [openSources, setOpenSources] = useState<number[]>([])
+  const sourceNodes = useRef(new Map<number, HTMLDivElement>())
+  const evidenceId = useId()
+  const sources = message.sources || []
+  const multipleDocuments = new Set(sources.map((source) => source.document_id)).size > 1
+
+  function openEvidence(indexes: number[]) {
+    setOpenSources((current) => [...new Set([...current, ...indexes])])
+    requestAnimationFrame(() => {
+      const element = sourceNodes.current.get(indexes[0])
+      element?.focus({ preventScroll: true })
+      element?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+    })
+  }
+
+  function citedContent(text: string, contentParts?: ContentPart[]) {
+    // New responses carry readable text plus explicit citation links. Keep the
+    // legacy parser for in-memory answers received before the API upgrade.
+    const parts = contentParts?.length && contentParts.map((part) => part.text).join('') === text
+      ? contentParts
+      : text.split(/((?:\[SRC_\d+\][ \t]*)+)/g).map((part) => ({
+        text: part,
+        source_ids: /^(?:\[SRC_\d+\][ \t]*)+$/.test(part)
+          ? [...part.matchAll(/\[(SRC_\d+)\]/g)].map((match) => match[1]) : []
+      }))
+    return parts.map((part, partIndex) => {
+      if (!part.source_ids.length) return part.text
+      const groups = new Map<string, number[]>()
+      let unavailable = false
+      for (const sourceId of part.source_ids) {
+        const index = sources.findIndex((source) => source.source_id === sourceId)
+        if (index < 0) { unavailable = true; continue }
+        const source = sources[index]
+        const key = `${source.document_id}:${source.page ?? source.section ?? source.chunk_id}`
+        groups.set(key, [...new Set([...(groups.get(key) || []), index])])
+      }
+      return <span key={partIndex} className="inline-flex flex-wrap items-baseline gap-1 align-baseline whitespace-normal">
+        {[...groups.entries()].map(([key, indexes]) => {
+          const source = sources[indexes[0]]
+          const location = source.page ? `pg. ${source.page}` : source.section || 'Source'
+          const label = multipleDocuments ? `${source.title} · ${location}` : location
+          return <button key={key} type="button" title={`${source.title}${source.page ? ` · Page ${source.page}` : ''} — view supporting passage`}
+            aria-label={`View source: ${source.title}${source.page ? `, page ${source.page}` : source.section ? `, ${source.section}` : ''}`}
+            aria-controls={indexes.map((index) => `${evidenceId}-${index}`).join(' ')}
+            onClick={() => openEvidence(indexes)}
+            className="inline-block max-w-full rounded px-1 text-xs leading-5 text-[#d7b779] underline decoration-[#d7b779]/40 underline-offset-2 hover:decoration-[#d7b779] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#d7b779]">
+            {label}
+          </button>
+        })}
+        {unavailable && <span className="text-xs text-white/50">Source unavailable</span>}
+      </span>
+    })
+  }
 
   if (message.role === 'user') {
     return (
@@ -37,19 +91,12 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
         <Bot className="h-4 w-4" strokeWidth={1.5} />
       </div>
       <div className="min-w-0 rounded-[22px] border border-white/10 bg-white/[0.055] px-4 py-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-xl sm:rounded-[26px] sm:px-5">
-      {message.query_type === 'temporal' ? (
-        <div className="mb-3 inline-flex rounded-full border border-white/10 bg-white/[0.045] px-3 py-1 text-xs font-medium text-white/46">
-          🕐 Temporal Query
-        </div>
-      ) : null}
-      <p className="whitespace-pre-wrap break-words text-sm leading-7 text-white/82">{message.content}</p>
-      {message.reasoning || typeof message.confidence === 'number' ? (
+      {message.evidence_status && <p className="mb-2 text-xs text-[#d7b779]">Evidence: {message.evidence_status.replaceAll('_', ' ')}</p>}
+      {message.effective_document_ids && <p className="mb-2 text-xs text-white/50">Effective scope: {message.effective_document_ids.length} document(s)</p>}
+      {message.retrieval_diagnostics?.semantic === 'unavailable' && <p role="status" className="mb-2 text-xs text-amber-200">Semantic retrieval unavailable; using local document search.</p>}
+      <p className="whitespace-pre-wrap break-words text-sm leading-7 text-white/82">{citedContent(message.content, message.content_parts)}</p>
+      {message.reasoning ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {typeof message.confidence === 'number' ? (
-            <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs text-white/56">
-              Confidence {Math.round(message.confidence * 100)}%
-            </span>
-          ) : null}
           {message.reasoning ? (
             <button
               type="button"
@@ -64,21 +111,15 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
       ) : null}
       {message.reasoning && showReasoning ? (
         <div className="mt-3 rounded-2xl border border-white/10 bg-black/24 p-4 text-sm leading-6 text-white/62">
-          {message.reasoning}
+          {citedContent(message.reasoning)}
         </div>
       ) : null}
       {message.sources && message.sources.length > 0 ? (
         <div className="mt-4 space-y-2">
-          {message.sources.map((source, index) => (
-            <button
-              key={`${source.title}-${source.excerpt}`}
-              type="button"
-              className="block min-h-11 w-full rounded-2xl border border-white/10 bg-black/18 p-3 text-left text-sm transition hover:border-[#d7b779]/35"
-            >
-              <span className="block break-words font-semibold text-white/78">{evidenceTitle(source.title, index)}</span>
-              <span className="mt-1 block break-words text-white/42">{source.excerpt}</span>
-            </button>
-          ))}
+          {message.sources.map((source, index) => <div key={`${source.chunk_id}-${index}`} id={`${evidenceId}-${index}`} tabIndex={-1}
+            ref={(element) => { if (element) sourceNodes.current.set(index, element); else sourceNodes.current.delete(index) }}>
+            <EvidenceSource source={source} open={openSources.includes(index)} onOpenChange={(open) => setOpenSources((current) => open ? [...new Set([...current, index])] : current.filter((item) => item !== index))} />
+          </div>)}
         </div>
       ) : null}
       {message.related_memories && message.related_memories.length > 0 ? (

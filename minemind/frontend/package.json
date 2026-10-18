@@ -4,28 +4,38 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --ext .ts,.tsx --ignore-pattern .next --ignore-pattern node_modules",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-three/drei": "^9.122.0",
-    "@react-three/fiber": "^8.18.0",
-    "@types/node": "^20.14.10",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "autoprefixer": "^10.4.19",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.0.0",
     "framer-motion": "^12.42.0",
     "lucide-react": "^1.22.0",
-    "next": "14.2.4",
-    "postcss": "^8.4.39",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "next": "16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-dropzone": "^14.2.3",
     "reactflow": "^11.11.4",
     "recharts": "^2.12.7",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.19.2",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "15.5.27",
+    "jsdom": "^26.1.0",
+    "vitest": "^5.0.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
-    "three": "^0.167.1",
     "typescript": "^5.5.3"
   }
 }

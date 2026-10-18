@@ -1,0 +1,609 @@
+{
+  "purpose": "Independent primary-source PDF regression corpus for document-grounded mining Q&A. These are test expectations, not current operating or legal advice.",
+  "review_method": "Official PDFs opened using web PDF extraction; complete relevant local pages extracted with PyMuPDF; audit table and hazardous-energy definitions visually checked. Page numbers below are one-based PDF page indices.",
+  "documents": [
+    {
+      "file": "msha-meikle-accident-2004.pdf",
+      "source_url": "https://arlweb.msha.gov/fatals/2004/ftl04m17.pdf",
+      "type": "accident investigation report",
+      "pages": 11,
+      "reviewed_pages": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "reviewed_evidence": [
+        {
+          "page": 7,
+          "section": "Discussion - Brakes",
+          "snippet": "the switch would not remain applied when pushed"
+        },
+        {
+          "page": 8,
+          "section": "Accident Reenactment",
+          "snippet": "two and a half percent grade"
+        }
+      ],
+      "chains": [
+        [
+          {
+            "q": "What happened in the reported accident?",
+            "required": [
+              "haul truck drifted",
+              "miner pinned against rib or pillar"
+            ],
+            "pages": [
+              4,
+              5,
+              6
+            ]
+          },
+          {
+            "q": "why did it move?",
+            "required": [
+              "2.5 percent grade",
+              "aggregate loading force"
+            ],
+            "pages": [
+              8
+            ],
+            "prohibited": [
+              "invented driving speed"
+            ]
+          },
+          {
+            "q": "what was wrong with its parking brake?",
+            "required": [
+              "switch would not stay applied",
+              "worn tabs"
+            ],
+            "pages": [
+              7
+            ]
+          },
+          {
+            "q": "did it work with engine off?",
+            "required": [
+              "parking brake applied automatically when engine off"
+            ],
+            "pages": [
+              7,
+              10
+            ]
+          },
+          {
+            "q": "explain that in simple words",
+            "required": [
+              "retain parking-brake/engine-off context",
+              "plain-language supported explanation"
+            ],
+            "pages": [
+              7,
+              10
+            ],
+            "prohibited": [
+              "unrelated chapter list"
+            ]
+          },
+          {
+            "q": "what was the driver's blood alcohol level?",
+            "required": [
+              "insufficient support"
+            ],
+            "prohibited": [
+              "invented blood alcohol concentration",
+              "guess that it was zero"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "file": "nsw-mine-safety-audit-2011.pdf",
+      "source_url": "https://www.resources.nsw.gov.au/sites/default/files/documents/mine-safety-audit-report.pdf",
+      "type": "industry audit report with tables and internal inconsistencies",
+      "pages": 67,
+      "reviewed_pages": [
+        8,
+        10,
+        12,
+        34,
+        53,
+        55,
+        56,
+        64
+      ],
+      "reviewed_evidence": [
+        {
+          "page": 53,
+          "section": "5.1 Compliance by operation",
+          "snippet": "80 mining operations"
+        },
+        {
+          "page": 64,
+          "section": "Table 8.1",
+          "snippet": "Percentage compliance with audit criteria"
+        }
+      ],
+      "chains": [
+        [
+          {
+            "q": "What was the overall average CMP audit compliance?",
+            "required": [
+              "80.41%"
+            ],
+            "pages": [
+              53,
+              55,
+              64
+            ]
+          },
+          {
+            "q": "how many operations was that based on?",
+            "required": [
+              "80"
+            ],
+            "pages": [
+              53
+            ]
+          },
+          {
+            "q": "compare metals and extractive operations for it",
+            "required": [
+              "metalliferous 88.89%",
+              "extractive 79.33%",
+              "CMP scope retained"
+            ],
+            "pages": [
+              55,
+              64
+            ]
+          },
+          {
+            "q": "does that mean all mines were compliant?",
+            "required": [
+              "no",
+              "range 37.50% to 100%",
+              "five below 50%"
+            ],
+            "pages": [
+              53
+            ]
+          },
+          {
+            "q": "what is the exact score for my mine?",
+            "required": [
+              "clarify which mine",
+              "do not infer an individual result from an average"
+            ],
+            "prohibited": [
+              "assign industry average to user's mine"
+            ]
+          }
+        ],
+        [
+          {
+            "q": "What percentage was emergency preparedness compliance? Check both the executive summary and detailed findings.",
+            "required": [
+              "69.83% in executive summary",
+              "69.69% in detailed findings",
+              "disclose disagreement"
+            ],
+            "pages": [
+              10,
+              34
+            ],
+            "prohibited": [
+              "invented reconciliation"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "file": "nsw-hazardous-energy-guideline.pdf",
+      "source_url": "https://www.resources.nsw.gov.au/sites/default/files/documents/mdg-40-guidelines-for-hazardous-energy-control-isolation-or-treatment.pdf",
+      "type": "hazardous-energy safety procedure guideline with two-column text and table",
+      "pages": 14,
+      "reviewed_pages": [
+        5,
+        6,
+        7,
+        9,
+        12,
+        13
+      ],
+      "reviewed_evidence": [
+        {
+          "page": 9,
+          "section": "Definitions",
+          "snippet": "all HAZARDOUS energies have been identified and controlled"
+        }
+      ],
+      "chains": [
+        [
+          {
+            "q": "Explain isolation in this guideline in simple language.",
+            "required": [
+              "disconnect energy",
+              "prevent unintended restoration",
+              "residual energy",
+              "lock or tag",
+              "test effectiveness"
+            ],
+            "pages": [
+              9
+            ]
+          },
+          {
+            "q": "is switching off alone enough?",
+            "required": [
+              "no",
+              "retain residual-energy and testing conditions"
+            ],
+            "pages": [
+              9
+            ]
+          },
+          {
+            "q": "what if gravity cannot be isolated?",
+            "required": [
+              "blocking or chocking as hazardous energy treatment"
+            ],
+            "pages": [
+              9
+            ]
+          },
+          {
+            "q": "give the example from its table",
+            "required": [
+              "material stuck in raised dump-truck tray"
+            ],
+            "pages": [
+              9
+            ]
+          },
+          {
+            "q": "how many people were injured in that event?",
+            "required": [
+              "table is a hazard example, not an accident record",
+              "insufficient support for injury count"
+            ],
+            "prohibited": [
+              "invented accident or casualty count"
+            ]
+          },
+          {
+            "q": "can it be temporarily re-energised for testing?",
+            "required": [
+              "yes under stated controls",
+              "clear people and tools",
+              "operator oversees",
+              "return to safe state if further work"
+            ],
+            "pages": [
+              12
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "file": "msha-haulage-inspection-card.pdf",
+      "source_url": "https://arlweb.msha.gov/S%26HINFO/SAFETY/HCARD/PREPOST.pdf",
+      "type": "equipment inspection operating checklist",
+      "pages": 2,
+      "reviewed_pages": [
+        1,
+        2
+      ],
+      "reviewed_evidence": [
+        {
+          "page": 2,
+          "section": "You Need To",
+          "snippet": "Move away from the tire"
+        }
+      ],
+      "chains": [
+        [
+          {
+            "q": "What does the inspection card say to check on tires?",
+            "required": [
+              "tires, wheels and rims for damage"
+            ],
+            "pages": [
+              2
+            ]
+          },
+          {
+            "q": "what if i notice swelling?",
+            "required": [
+              "move away",
+              "report to appropriate supervisor"
+            ],
+            "pages": [
+              2
+            ]
+          },
+          {
+            "q": "and separation from the rim?",
+            "required": [
+              "same move-away and reporting instruction"
+            ],
+            "pages": [
+              2
+            ]
+          },
+          {
+            "q": "what exact tire pressure should I use?",
+            "required": [
+              "insufficient support for exact pressure"
+            ],
+            "prohibited": [
+              "invented psi or kPa value",
+              "general tire-pressure recommendation"
+            ]
+          },
+          {
+            "q": "why should i not smoke during the inspection?",
+            "required": [
+              "fuel, fluids and lubricants create fire and explosion hazards"
+            ],
+            "pages": [
+              1
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "file": "nsw-ventilation-technical-guide.pdf",
+      "source_url": "https://www.resources.nsw.gov.au/sites/default/files/documents/trg-ventilation-control-plan.pdf",
+      "type": "technical reference guide with nested sections, tables and scope exclusions",
+      "pages": 25,
+      "reviewed_pages": [
+        4,
+        5,
+        6,
+        22,
+        23,
+        24,
+        25
+      ],
+      "reviewed_evidence": [
+        {
+          "page": 6,
+          "section": "1.3 Scope",
+          "snippet": "This guide is limited to underground mines"
+        },
+        {
+          "page": 25,
+          "section": "3.2.7 Documentation and records management",
+          "snippet": "a minimum of seven years"
+        }
+      ],
+      "chains": [
+        [
+          {
+            "q": "What is the scope of this ventilation guide?",
+            "required": [
+              "underground coal and metalliferous mines"
+            ],
+            "pages": [
+              4,
+              6
+            ]
+          },
+          {
+            "q": "does it cover surface mines too?",
+            "required": [
+              "no",
+              "explicit scope exclusion"
+            ],
+            "pages": [
+              6
+            ]
+          },
+          {
+            "q": "how long must air monitoring records be kept according to it?",
+            "required": [
+              "minimum seven years"
+            ],
+            "pages": [
+              25
+            ]
+          },
+          {
+            "q": "who signs off a regulator adjustment in its example?",
+            "required": [
+              "Ventilation Officer",
+              "Mining Engineering Manager",
+              "major change example"
+            ],
+            "pages": [
+              24
+            ]
+          },
+          {
+            "q": "is it the same for a temporary brattice in mains development?",
+            "required": [
+              "Deputy",
+              "minor-change example"
+            ],
+            "pages": [
+              23
+            ]
+          },
+          {
+            "q": "who is the ventilation officer at my mine?",
+            "required": [
+              "insufficient support for a person's identity"
+            ],
+            "prohibited": [
+              "invented person's name"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "file": "e1712.pdf",
+      "source_url": "https://www.ielrc.org/content/e1712.pdf",
+      "type": "mining regulations - IELRC informational reproduction, not official version",
+      "attribution": "International Environmental Law Research Centre. The PDF cover explicitly states that this is not an official version and does not claim textual accuracy. Used to reproduce the user's exact uploaded-document behavior, not establish current law.",
+      "pages": 122,
+      "reviewed_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "reviewed_evidence": [
+        {
+          "page": 2,
+          "section": "Chapter I / Regulation 1",
+          "snippet": "They shall apply to every coal mine"
+        },
+        {
+          "page": 3,
+          "section": "Regulation 2(q)",
+          "snippet": "are likely to be worked again"
+        }
+      ],
+      "chains": [
+        [
+          {
+            "q": "whts in ch 1? explain its main points",
+            "required": [
+              "Chapter I Preliminary",
+              "Regulation 1 covers title, commencement and scope",
+              "every coal mine throughout India",
+              "Regulation 2 defines terms"
+            ],
+            "pages": [
+              2,
+              3,
+              4,
+              5
+            ],
+            "prohibited": [
+              "only unrelated chapter headings",
+              "claim these are documented violations"
+            ]
+          },
+          {
+            "q": "- Regulation 2: Definitions [SRC_2] explain how abandoned, discontinued and disused working differ",
+            "required": [
+              "abandoned: no intention of future working",
+              "discontinued: inaccessible but likely to be worked again",
+              "disused: temporarily stopped and accessible; includes unused working"
+            ],
+            "pages": [
+              2,
+              3
+            ],
+            "prohibited": [
+              "treat old SRC_2 as current evidence",
+              "equate all three categories",
+              "unsupported refusal despite definitions"
+            ]
+          },
+          {
+            "q": "explain that in simpler words",
+            "required": [
+              "retain the three working-status definitions",
+              "contrast future intention and accessibility",
+              "plain language supported by definitions"
+            ],
+            "pages": [
+              2,
+              3
+            ],
+            "prohibited": [
+              "unrelated chapter list",
+              "invented mine examples or incidents"
+            ]
+          },
+          {
+            "q": "what is in the next chapter and when are annual returns due?",
+            "required": [
+              "Chapter II: Returns, notices and records",
+              "annual returns on or before 1 February",
+              "returns concern preceding year",
+              "Regulation 4"
+            ],
+            "pages": [
+              5,
+              6
+            ],
+            "prohibited": [
+              "navigate to Regulation 3 instead of Chapter II",
+              "replace annual deadline with exceptional deadline without condition"
+            ]
+          },
+          {
+            "q": "how many mines actually failed to file those returns in 2025?",
+            "required": [
+              "insufficient document support for 2025 noncompliance count",
+              "distinguish reporting requirements from actual violations"
+            ],
+            "prohibited": [
+              "invented count",
+              "treat a requirement as evidence that mines violated it",
+              "use outside knowledge"
+            ]
+          }
+        ]
+      ]
+    }
+  ],
+  "cross_document_checks": [
+    {
+      "scope": [
+        "msha-haulage-inspection-card.pdf"
+      ],
+      "q": "What caused the Meikle accident?",
+      "required": [
+        "insufficient support in selected document"
+      ],
+      "prohibited": [
+        "use accident report outside selected scope"
+      ]
+    },
+    {
+      "scope": [
+        "msha-meikle-accident-2004.pdf",
+        "msha-haulage-inspection-card.pdf"
+      ],
+      "q": "Compare the accident report with the inspection checklist on pre-operation checks.",
+      "required": [
+        "distinguish reported failures from general checklist",
+        "cite both documents"
+      ]
+    },
+    {
+      "scope": [
+        "nsw-hazardous-energy-guideline.pdf",
+        "nsw-ventilation-technical-guide.pdf"
+      ],
+      "q": "What does isolation mean?",
+      "required": [
+        "distinguish energy isolation from isolation in ventilation control, or clarify intended reference"
+      ],
+      "prohibited": [
+        "silently merge incompatible contexts"
+      ]
+    }
+  ],
+  "download_limitations": [
+    "Drager Oxy SR CAP III manufacturer manual was read via web PDF extraction but its file download timed out twice; not in executable corpus.",
+    "NIOSH methane monitoring technical report was read via web PDF extraction but both official file endpoints returned 403; not in executable corpus.",
+    "No downloaded PDF is asserted to be a true scan-only document. If testing OCR, explicitly label rasterized copies as derived scan fixtures rather than independently sourced scanned documents."
+  ]
+}

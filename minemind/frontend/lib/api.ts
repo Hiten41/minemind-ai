@@ -17,9 +17,13 @@ const BASE = configuredApiBase || (
   process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:8001'
 )
 const TOKEN_KEY = 'minemind_token'
-const AUTH_TIMEOUT_MS = 90000
-const QUERY_TIMEOUT_MS = 120000
-const AUTH_TIMEOUT_MESSAGE = 'MineMind is waking up the secure login service. Please try again in a moment if this takes too long.'
+const AUTH_TIMEOUT_MS = 30000
+const SESSION_TIMEOUT_MS = 15000
+const QUERY_TIMEOUT_MS = 60000
+const STANDARD_REQUEST_TIMEOUT_MS = 20000
+const UPLOAD_TIMEOUT_MS = 120000
+const AUTH_TIMEOUT_MESSAGE = 'MineMind could not reach the sign-in service in 30 seconds. Please try again.'
+const SESSION_TIMEOUT_MESSAGE = 'MineMind could not restore your session. Please sign in again.'
 const QUERY_TIMEOUT_MESSAGE = 'MineMind is still reading your document memory. Please try a narrower question or ask again in a moment.'
 
 type ChatHistoryItem = {
@@ -27,16 +31,32 @@ type ChatHistoryItem = {
   content: string
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function parseJson<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
     let detail = fallback
     try {
       const body = await res.json()
-      detail = body.detail ?? fallback
+      detail = typeof body.detail === 'string' ? body.detail : Array.isArray(body.detail)
+        ? body.detail.map((issue: { msg?: string; loc?: (string | number)[]; type?: string; ctx?: { min_length?: number } }) => {
+          const field = issue.loc?.at(-1)
+          if (field === 'password' && issue.type === 'string_too_short') {
+            return `Password must be at least ${issue.ctx?.min_length ?? 6} characters long.`
+          }
+          const label = typeof field === 'string' ? `${field.charAt(0).toUpperCase()}${field.slice(1)}: ` : ''
+          return `${label}${issue.msg || 'Invalid input'}`
+        }).join('; ')
+        : fallback
     } catch {
       detail = fallback
     }
-    throw new Error(detail)
+    throw new ApiError(detail, res.status)
   }
   return res.json() as Promise<T>
 }
@@ -68,6 +88,9 @@ async function fetchWithTimeout(
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error(timeoutMessage)
     }
+    if (error instanceof TypeError) {
+      throw new Error('Cannot reach MineMind right now. Check your connection and try again.')
+    }
     throw error
   } finally {
     window.clearTimeout(timer)
@@ -85,6 +108,14 @@ export function setAuthToken(token: string) {
 
 export function clearAuthToken() {
   window.localStorage.removeItem(TOKEN_KEY)
+}
+
+export async function logoutUser(): Promise<void> {
+  const res = await fetchWithTimeout(apiUrl('/api/auth/logout'), {
+    method: 'POST', headers: authHeaders()
+  }, SESSION_TIMEOUT_MS, 'Sign-out could not be confirmed. Please retry.')
+  await parseJson<{ status: string }>(res, 'Sign-out failed')
+  clearAuthToken()
 }
 
 function authHeaders(): HeadersInit {
@@ -123,60 +154,71 @@ export async function loginUser(payload: {
 }
 
 export async function getCurrentUser(): Promise<User> {
-  const res = await fetch(apiUrl('/api/auth/me'), {
+  const res = await fetchWithTimeout(apiUrl('/api/auth/me'), {
     headers: authHeaders()
-  })
+  }, SESSION_TIMEOUT_MS, SESSION_TIMEOUT_MESSAGE)
   return parseJson<User>(res, 'Session expired')
 }
 
 export async function uploadDocument(
   file: File,
-  type: string
+  type: string,
+  requestKey: string = crypto.randomUUID()
 ): Promise<Document> {
   const form = new FormData()
   form.append('file', file)
   form.append('doc_type', type)
-  const res = await fetch(apiUrl('/api/upload'), {
+  const res = await fetchWithTimeout(apiUrl('/api/upload'), {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { ...authHeaders(), 'Idempotency-Key': requestKey },
     body: form
-  })
+  }, UPLOAD_TIMEOUT_MS, 'The upload is taking longer than two minutes. Check the file and try again.')
   return parseJson<Document>(res, 'Upload failed')
+}
+
+export async function retryDocument(documentId: string): Promise<{ status: string }> {
+  const res = await fetchWithTimeout(apiUrl(`/api/documents/${documentId}/retry`), {
+    method: 'POST', headers: authHeaders()
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Retry request timed out; check the document status.')
+  return parseJson<{ status: string }>(res, 'Indexing retry failed')
 }
 
 export async function queryAI(
   question: string,
-  history: ChatHistoryItem[]
+  history: ChatHistoryItem[],
+  documentIds: string[] = []
 ): Promise<QueryResponse> {
   const res = await fetchWithTimeout(apiUrl('/api/query'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({
       question,
-      chat_history: history
+      chat_history: history,
+      scope_mode: documentIds.length ? 'selected' : 'all',
+      document_ids: documentIds
     })
   }, QUERY_TIMEOUT_MS, QUERY_TIMEOUT_MESSAGE)
   return parseJson<QueryResponse>(res, 'Query failed')
 }
 
 export async function getChatHistory(): Promise<ChatMessage[]> {
-  const res = await fetch(apiUrl('/api/chat/history'), {
+  const res = await fetchWithTimeout(apiUrl('/api/chat/history'), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Chat history is taking too long to load. Refresh to try again.')
   return parseJson<ChatMessage[]>(res, 'Failed to fetch chat history')
 }
 
 export async function getDocuments(): Promise<Document[]> {
-  const res = await fetch(apiUrl('/api/documents'), {
+  const res = await fetchWithTimeout(apiUrl('/api/documents'), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Your documents are taking too long to load. Please retry.')
   return parseJson<Document[]>(res, 'Failed to fetch docs')
 }
 
 export async function getDocumentIntelligence(): Promise<DocumentIntelligence> {
-  const res = await fetch(apiUrl('/api/intelligence/documents'), {
+  const res = await fetchWithTimeout(apiUrl('/api/intelligence/documents'), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Document insights are taking too long to load. Please refresh.')
   return parseJson<DocumentIntelligence>(res, 'Failed to fetch document intelligence')
 }
 
@@ -189,16 +231,16 @@ export async function getDocumentsPage(options: {
   params.set('limit', String(options.limit ?? 50))
   params.set('offset', String(options.offset ?? 0))
   if (options.type) params.set('doc_type', options.type)
-  const res = await fetch(apiUrl(`/api/documents/page?${params.toString()}`), {
+  const res = await fetchWithTimeout(apiUrl(`/api/documents/page?${params.toString()}`), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Your documents are taking too long to load. Please retry.')
   return parseJson<DocumentPage>(res, 'Failed to fetch docs')
 }
 
 export async function getDocumentFile(documentId: string): Promise<Blob> {
-  const res = await fetch(apiUrl(`/api/documents/${documentId}/file`), {
+  const res = await fetchWithTimeout(apiUrl(`/api/documents/${documentId}/file`), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'The document preview is taking too long to load. Please try again.')
   if (!res.ok) {
     let detail = 'Original file is not available for preview'
     try {
@@ -213,38 +255,40 @@ export async function getDocumentFile(documentId: string): Promise<Blob> {
 }
 
 export async function improveMemory(): Promise<{ status: string; message: string }> {
-  const res = await fetch(apiUrl('/api/improve'), {
+  const res = await fetchWithTimeout(apiUrl('/api/improve'), {
     method: 'POST',
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Memory improvement is taking too long. Please try again.')
   return parseJson<{ status: string; message: string }>(res, 'Improve failed')
 }
 
 export async function forgetDataset(name: string): Promise<{ status: string }> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     apiUrl(`/api/forget/${name}`),
-    { method: 'DELETE', headers: authHeaders() }
+    { method: 'DELETE', headers: authHeaders() },
+    STANDARD_REQUEST_TIMEOUT_MS,
+    'Removing the document is taking too long. Please try again.'
   )
   return parseJson<{ status: string }>(res, 'Forget failed')
 }
 
 export async function getGraphData(): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
-  const res = await fetch(apiUrl('/api/graph'), {
+  const res = await fetchWithTimeout(apiUrl('/api/graph'), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'The knowledge graph is taking too long to load. Please refresh.')
   return parseJson<{ nodes: GraphNode[]; edges: GraphEdge[] }>(res, 'Graph fetch failed')
 }
 
 export async function getAnalytics(): Promise<AnalyticsData> {
-  const res = await fetch(apiUrl('/api/analytics'), {
+  const res = await fetchWithTimeout(apiUrl('/api/analytics'), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Analytics are taking too long to load. Please refresh.')
   return parseJson<AnalyticsData>(res, 'Analytics failed')
 }
 
 export async function getAlerts(): Promise<RiskAlert[]> {
-  const res = await fetch(apiUrl('/api/alerts'), {
+  const res = await fetchWithTimeout(apiUrl('/api/alerts'), {
     headers: authHeaders()
-  })
+  }, STANDARD_REQUEST_TIMEOUT_MS, 'Alerts are taking too long to load. Please refresh.')
   return parseJson<RiskAlert[]>(res, 'Alerts failed')
 }

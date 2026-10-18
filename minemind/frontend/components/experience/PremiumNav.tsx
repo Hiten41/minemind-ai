@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { BarChart3, FileText, Loader2, LogOut, MessageCircle, Mountain, UploadCloud, Wrench } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 
-import { clearAuthToken } from '@/lib/api'
+import { logoutUser } from '@/lib/api'
 
 const items = [
   { href: '/dashboard', label: 'Memory', icon: Mountain },
@@ -83,10 +83,15 @@ export default function PremiumNav() {
         <button
           type="button"
           onPointerDown={() => setPendingHref('/login')}
-          onClick={() => {
+          onClick={async () => {
             setPendingHref('/login')
-            clearAuthToken()
-            router.replace('/login')
+            try {
+              await logoutUser()
+              router.replace('/login')
+            } catch (error) {
+              setPendingHref(null)
+              window.alert(error instanceof Error ? error.message : 'Sign-out failed; retry.')
+            }
           }}
           className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full text-white/42 transition hover:bg-white/10 hover:text-white active:scale-95 sm:h-10 sm:w-10"
           aria-label="Sign out"

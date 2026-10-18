@@ -82,7 +82,7 @@ function MemoryCore({
         size: index % 4 === 0 ? 0.06 : 0.042
       }
     })
-  }, [])
+  }, [mobile])
 
   const links = useMemo(() => {
     const pairs: Array<[NodePoint, NodePoint]> = []

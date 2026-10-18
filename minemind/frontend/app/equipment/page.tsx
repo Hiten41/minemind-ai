@@ -8,37 +8,21 @@ import PremiumNav from '@/components/experience/PremiumNav'
 import { getDocumentIntelligence, getGraphData } from '@/lib/api'
 import type { DocumentIntelligenceItem, GraphNode } from '@/types'
 
-function deriveStatus(text: string): Equipment['status'] {
-  const lowered = text.toLowerCase()
-  if (/(offline|shutdown|out of service|failed|stopped|not operating)/.test(lowered)) return 'Offline'
-  if (/(maintenance|service|repair|inspection)/.test(lowered)) return 'Maintenance'
-  return 'Active'
-}
-
-function deriveRisk(text: string): Equipment['risk'] {
-  const lowered = text.toLowerCase()
-  if (/(hazard|failure|incident|unsafe|critical|leak|fault|breakdown)/.test(lowered)) return 'High'
-  if (/(maintenance|inspection|wear|warning|issue|replace)/.test(lowered)) return 'Medium'
-  return 'Low'
-}
-
-function deriveIncidents(text: string): number {
-  const matches = text.match(/incident|failure|fault|alarm|shutdown|repair|maintenance/gi)
-  return Math.min(9, matches?.length ?? 0)
-}
-
-function deriveLastInspection(text: string): string {
-  const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b|\b\d{2}\/\d{2}\/\d{4}\b/)
-  return dateMatch?.[0] ?? 'Recorded in your uploaded documents'
-}
+// Entity mentions do not establish an asset's operational state.
+function deriveStatus(_text: string): Equipment['status'] { return 'Unknown' }
+function deriveRisk(_text: string): Equipment['risk'] { return 'Unknown' }
+function deriveIncidents(_text: string): number { return 0 }
+function deriveLastInspection(_text: string): string { return 'Unknown' }
 
 const riskRank: Record<Equipment['risk'], number> = {
+  Unknown: 0,
   Low: 0,
   Medium: 1,
   High: 2
 }
 
 const statusRank: Record<Equipment['status'], number> = {
+  Unknown: 0,
   Active: 0,
   Maintenance: 1,
   Offline: 2
@@ -74,7 +58,7 @@ function documentEquipmentItems(documents: DocumentIntelligenceItem[]): Equipmen
         status: deriveStatus(summary),
         risk: deriveRisk(summary),
         incidents: (existing?.incidents ?? 0) + deriveIncidents(summary),
-        lastInspection: existing?.lastInspection ?? `Found in ${document.name}`,
+        lastInspection: existing?.lastInspection ?? 'Unknown',
       })
     }
   }
@@ -146,7 +130,7 @@ function EquipmentDetails({
         <p><span className="text-[#888888]">Status:</span> <span className="text-white">{equipment.status}</span></p>
         <p><span className="text-[#888888]">Risk:</span> <span className="text-white">{equipment.risk}</span></p>
         <p><span className="text-[#888888]">Last inspection:</span> <span className="text-white">{equipment.lastInspection}</span></p>
-        <p><span className="text-[#888888]">Incidents:</span> <span className="text-white">{equipment.incidents}</span></p>
+        <p><span className="text-[#888888]">Verified incidents:</span> <span className="text-white">{equipment.incidents}</span></p>
       </div>
       <button
         type="button"

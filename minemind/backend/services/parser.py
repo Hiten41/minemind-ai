@@ -1,5 +1,7 @@
 import fitz
 import os
+import time
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 from docx import Document
@@ -26,53 +28,118 @@ def _load_tesseract():
     return pytesseract
 
 
-def _ocr_pdf(file_path: str) -> str:
+def _ocr_page(page) -> str:
     pytesseract = _load_tesseract()
-    doc = fitz.open(file_path)
-    chunks: list[str] = []
+    zoom = OCR_DPI / 72
+    if page.rect.width * page.rect.height * zoom * zoom > 25_000_000:
+        raise RuntimeError('Page is too large for OCR')
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+    image = Image.frombytes('RGB', [pix.width,pix.height],pix.samples)
     try:
-        zoom = OCR_DPI / 72
-        matrix = fitz.Matrix(zoom, zoom)
-        for index, page in enumerate(doc, start=1):
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
-            image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            text = pytesseract.image_to_string(image)
-            if text.strip():
-                chunks.append(f"[OCR page {index}]\n{text.strip()}")
+        return pytesseract.image_to_string(image, timeout=20).strip()
     except pytesseract.TesseractNotFoundError as exc:
-        raise RuntimeError(
-            "OCR engine not found. Install Tesseract OCR for Windows and "
-            "add it to PATH, or set TESSERACT_CMD to tesseract.exe."
-        ) from exc
-    finally:
-        doc.close()
-    return "\n\n".join(chunks)
+        raise RuntimeError('This page needs OCR. Install Tesseract or configure TESSERACT_CMD, then retry.') from exc
+
+
+def _ocr_pdf(file_path: str) -> str:
+    with fitz.open(file_path) as doc:
+        return '\n\n'.join(f'[OCR page {i}]\n{_ocr_page(page)}' for i,page in enumerate(doc,1))
+
+
+def _table_rows(page) -> str:
+    """Preserve ruled table row membership alongside native text, including merged cells.
+
+    Strict line detection ignores coloured header backgrounds that otherwise create
+    phantom columns. Extraction can be incomplete; never infer missing cell values.
+    """
+    blocks=[]
+    try:
+        tables=page.find_tables(strategy='lines_strict').tables
+        for index,table in enumerate(tables[:20],1):
+            rows=table.extract()
+            if not rows or len(rows)<2 or max(len(row) for row in rows)<2:
+                continue
+            lines=[]
+            for row in rows:
+                cells=[' '.join((cell or '').split()) for cell in row]
+                lines.append(' | '.join(cells))
+            blocks.append(f'[Extracted table {index}: columns separated by |; each line is one row]\n'+'\n'.join(lines))
+    except (AttributeError,ValueError,RuntimeError):
+        # Native text remains available when a layout cannot be recognized.
+        return ''
+    return '\n\n'.join(blocks)
 
 
 def parse_pdf(file_path: str) -> str:
-    doc = fitz.open(file_path)
-    chunks = []
-    for index, page in enumerate(doc, start=1):
-        text = page.get_text().strip()
-        if text:
-            chunks.append(f"[PDF page {index}]\n{text}")
-    doc.close()
-    extracted = "\n\n".join(chunks)
-    if extracted.strip():
-        return extracted
-    ocr_text = _ocr_pdf(file_path)
-    return ocr_text or extracted
+    try:
+        # Opening bytes avoids PyMuPDF retaining a Windows file handle when
+        # construction fails on malformed input, which otherwise blocks cleanup.
+        with fitz.open(stream=Path(file_path).read_bytes(), filetype="pdf") as doc:
+            if doc.needs_pass:
+                raise RuntimeError('Encrypted PDFs must be unlocked before upload')
+            if len(doc)>200:
+                raise RuntimeError('PDF exceeds the 200-page limit')
+            chunks=[]
+            deadline = time.monotonic() + 60
+            for index,page in enumerate(doc,1):
+                if time.monotonic() > deadline:
+                    raise RuntimeError('PDF extraction exceeded its time budget; split the document and retry')
+                text=page.get_text().strip()
+                native=len(text)>=20 and sum(c.isalpha() for c in text)>=8
+                if not native:
+                    text=_ocr_page(page)
+                else:
+                    rows=_table_rows(page)
+                    if rows:
+                        text+='\n\n'+rows
+                if text:
+                    chunks.append(f"[{'PDF' if native else 'OCR'} page {index}]\n{text}")
+            return '\n\n'.join(chunks)
+    except (fitz.FileDataError, fitz.EmptyFileError) as exc:
+        raise RuntimeError('Invalid or corrupt PDF') from exc
 
 
 def parse_docx(file_path: str) -> str:
-    doc = Document(file_path)
-    return "\n".join([p.text for p in doc.paragraphs
-                      if p.text.strip()])
+    from zipfile import ZipFile, BadZipFile
+    from docx.opc.exceptions import PackageNotFoundError
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+    from docx.table import Table
+    from lxml.etree import XMLSyntaxError
+    try:
+        with ZipFile(file_path) as archive:
+            if sum(info.file_size for info in archive.infolist())>32*1024*1024:
+                raise RuntimeError('DOCX expanded content exceeds 32 MB')
+        doc=Document(file_path)
+        output=[]
+        table_number=0
+        def visit(element,parent,location=''):
+            nonlocal table_number
+            for child in element:
+                if child.tag==qn('w:p'):
+                    text=Paragraph(child,parent).text.strip()
+                    if text:
+                        output.append((f'[{location}]\n' if location else '')+text)
+                elif child.tag==qn('w:tbl'):
+                    table_number+=1
+                    number=table_number
+                    table=Table(child,parent)
+                    seen=set()
+                    for row_index,row in enumerate(table.rows,1):
+                        for col_index,cell in enumerate(row.cells,1):
+                            if cell._tc in seen:
+                                continue
+                            seen.add(cell._tc)
+                            visit(cell._tc,cell,f'Table {number} row {row_index} column {col_index}')
+        visit(doc.element.body,doc)
+        return '\n\n'.join(output)
+    except (BadZipFile, PackageNotFoundError, XMLSyntaxError, KeyError) as exc:
+        raise RuntimeError('Invalid or corrupt DOCX') from exc
 
 
 def parse_txt(file_path: str) -> str:
     with open(file_path, "r", encoding="utf-8",
-              errors="ignore") as f:
+              errors="strict") as f:
         return f.read()
 
 
@@ -90,4 +157,4 @@ def parse_file(file_path: str, filename: str) -> str:
         return parse_docx(file_path)
     elif ext == "txt":
         return parse_txt(file_path)
-    return ""
+    raise RuntimeError("Supported formats are PDF, DOCX and UTF-8 TXT")

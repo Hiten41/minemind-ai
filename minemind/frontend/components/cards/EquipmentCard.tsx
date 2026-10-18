@@ -1,8 +1,8 @@
 export type Equipment = {
   id: string
   name: string
-  status: 'Active' | 'Maintenance' | 'Offline'
-  risk: 'Low' | 'Medium' | 'High'
+  status: 'Unknown' | 'Active' | 'Maintenance' | 'Offline'
+  risk: 'Unknown' | 'Low' | 'Medium' | 'High'
   incidents: number
   lastInspection: string
 }
@@ -13,12 +13,14 @@ type EquipmentCardProps = Equipment & {
 }
 
 const statusClass: Record<Equipment['status'], string> = {
+  Unknown: 'text-white/60',
   Active: 'bg-success/15 text-success',
   Maintenance: 'bg-white/10 text-white/72',
   Offline: 'bg-danger/15 text-danger'
 }
 
 const riskClass: Record<Equipment['risk'], string> = {
+  Unknown: 'text-white/60',
   Low: 'text-success',
   Medium: 'text-white/72',
   High: 'text-danger'
@@ -57,7 +59,7 @@ export default function EquipmentCard({
           <p className={`font-semibold ${riskClass[risk]}`}>{risk}</p>
         </div>
         <div>
-          <p className="text-[#888888]">Incidents</p>
+          <p className="text-[#888888]">Verified incidents</p>
           <p className="font-semibold text-white">{incidents}</p>
         </div>
         <div className="min-[420px]:col-span-2">

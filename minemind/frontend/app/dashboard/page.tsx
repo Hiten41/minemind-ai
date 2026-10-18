@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { AlertTriangle, ArrowUpRight, Check, Loader2, Search, Send, UploadCloud, Wand2 } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -185,7 +186,7 @@ export default function DashboardPage() {
       setDashboardNotice(`Uploading ${file.name}...`)
       setDashboardNoticeTone('neutral')
       try {
-        await uploadDocument(file, 'incident')
+        await uploadDocument(file, 'auto')
         setDashboardNotice(`${file.name} uploaded. Memory indexing is continuing in the background.`)
         setDashboardNoticeTone('success')
         refreshDashboardData()
@@ -248,7 +249,7 @@ export default function DashboardPage() {
   }
 
   const documents = analytics?.total_documents ?? 0
-  const incidentReports = analytics?.incidents_count ?? 0
+  const incidentReports = analytics?.incident_document_count ?? 0
   const documentsLabel = (() => {
     if (analyticsState === 'loading') return 'Loading...'
     if (analyticsState === 'error') return 'Unavailable'
@@ -257,7 +258,7 @@ export default function DashboardPage() {
   const incidentsLabel = (() => {
     if (analyticsState === 'loading') return 'Loading...'
     if (analyticsState === 'error') return 'Unavailable'
-    return `${incidentReports.toLocaleString()} uploaded ${incidentReports === 1 ? 'case' : 'cases'}`
+    return `${incidentReports.toLocaleString()} uploaded ${incidentReports === 1 ? 'incident document' : 'incident documents'}`
   })()
 
   return (
@@ -279,7 +280,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="tracked-label text-[10px] text-white/38">Real-Time Alerts</p>
-              <h2 className="mt-2 text-sm font-semibold text-white/82">Risk signals</h2>
+              <h2 className="mt-2 text-sm font-semibold text-white/82">Unreviewed document signals</h2>
             </div>
             <AlertTriangle className="h-5 w-5 text-[#d7b779]" strokeWidth={1.55} />
           </div>
@@ -339,7 +340,7 @@ export default function DashboardPage() {
           className="absolute top-24 max-w-[calc(100vw-2rem)] rounded-[30px] bg-black/30 px-4 py-5 text-center shadow-[0_24px_110px_rgba(0,0,0,0.34)] backdrop-blur-[2px] sm:px-5 xl:top-[13vh] xl:max-w-4xl xl:px-7"
         >
           <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-[#f59e0b]/20 bg-black/24 px-3 py-1.5 shadow-[0_0_44px_rgba(245,158,11,0.12)] backdrop-blur-xl md:gap-3 md:px-4 md:py-2">
-            <img src="/logo.svg" alt="MineMind AI logo" className="h-7 w-7 rounded-xl md:h-8 md:w-8" />
+            <Image src="/logo.svg" alt="MineMind AI logo" width={32} height={32} className="h-7 w-7 rounded-xl md:h-8 md:w-8" />
             <span className="tracked-label text-[10px] text-[#f59e0b]/78 md:text-[11px]">MineMind AI</span>
           </div>
           <h1 className="metal-text mx-auto mt-4 max-w-[360px] text-[clamp(2rem,10vw,3.4rem)] font-bold leading-[1.05] tracking-tight sm:text-5xl md:max-w-3xl xl:text-6xl">

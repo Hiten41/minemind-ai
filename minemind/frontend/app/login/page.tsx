@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { Loader2, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 
@@ -23,6 +24,10 @@ export default function LoginPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (loading || openingApp) return
+    if (mode === 'register' && Array.from(password).length < 6) {
+      setError('Password must be at least 6 characters long.')
+      return
+    }
     setLoading(true)
     setOpeningApp(false)
     setError('')
@@ -51,9 +56,11 @@ export default function LoginPage() {
         transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
         className="glass-depth relative z-10 w-full max-w-[500px] rounded-[32px] p-6 sm:rounded-[36px] sm:p-7"
       >
-        <img
+        <Image
           src="/logo.svg"
           alt="MineMind AI logo"
+          width={96}
+          height={96}
           className="mx-auto h-20 w-20 rounded-[24px] shadow-[0_0_60px_rgba(245,158,11,0.18)] sm:h-24 sm:w-24"
         />
         <div className="mt-6 text-center">
@@ -92,10 +99,13 @@ export default function LoginPage() {
           ) : (
             <Field icon={Mail} placeholder="Email or mobile number" value={identifier} onChange={setIdentifier} />
           )}
-          <Field icon={LockKeyhole} type="password" placeholder="Password" value={password} onChange={setPassword} />
+          <Field icon={LockKeyhole} type="password" placeholder={mode === 'register' ? 'Password (at least 6 characters)' : 'Password'} value={password} onChange={setPassword} />
+          {mode === 'register' ? (
+            <p className="px-1 text-xs text-white/60">Password must be at least 6 characters long.</p>
+          ) : null}
 
           {error ? (
-            <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+            <div role="alert" className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
               {error}
             </div>
           ) : null}

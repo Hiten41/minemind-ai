@@ -157,7 +157,7 @@ export default function AnalyticsPage() {
 
   const data = analyticsData ?? emptyAnalytics()
   const documentTypes = data.document_types
-  const monthlyData = data.incidents_per_month
+  const monthlyData = (data.document_uploads_per_month ?? [])
   const totalTypedDocs = useMemo(
     () => documentTypes.reduce((sum, item) => sum + item.value, 0),
     [documentTypes]
@@ -220,21 +220,21 @@ export default function AnalyticsPage() {
             icon={FileStack}
           />
           <MetricCard
-            label="Memory Nodes"
+            label="Estimated text chunks"
             value={compactNumber(data.memory_nodes)}
-            detail={`Average Density: ${compactNumber(nodesPerDoc)} nodes/doc`}
+            detail={`Average Density: ${compactNumber(nodesPerDoc)} estimated chunks/doc`}
             tone="#d7b779"
             icon={BrainCircuit}
           />
           <MetricCard
-            label="Incidents"
+            label="Verified incidents"
             value={compactNumber(data.incidents_count)}
-            detail={`${percent(data.incidents_count, data.total_documents)}% of documents are incident records`}
+            detail="Verified event records are not tracked"
             tone="#f07167"
             icon={AlertTriangle}
           />
           <MetricCard
-            label="Equipment"
+            label="Equipment document mentions"
             value={compactNumber(data.equipment_count)}
             detail={`Equipment Linked: ${percent(data.equipment_count, data.total_documents)}% of documents`}
             tone="#7ed6a5"
@@ -243,7 +243,7 @@ export default function AnalyticsPage() {
         </section>
 
         <div className="mt-8 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
-          <SectionShell eyebrow="Monthly Trend" title="Incident capture over time" className="min-h-[430px]">
+          <SectionShell eyebrow="Monthly Trend" title="Document uploads over time" className="min-h-[430px]">
             <div className="h-[340px] min-w-0 overflow-x-auto">
               <div className="h-full min-w-[260px] sm:min-w-[320px]">
               <ResponsiveContainer width="100%" height="100%">

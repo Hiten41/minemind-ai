@@ -24,7 +24,7 @@ Upload a DGMS regulation PDF and an incident report. Ask:
 
 > Which regulations were violated in the June incident?
 
-MineMind reasons across the uploaded documents, returns a grounded answer with cited sources, confidence score, and reasoning, then preserves that memory for future sessions.
+MineMind reasons across the uploaded documents, returns exact retrieved passages with server-owned citations and evidence status, then preserves that memory for future sessions.
 
 Live demo: coming soon.
 
@@ -64,7 +64,7 @@ Live demo: coming soon.
 
 ### Real-Time Risk Alerts
 
-- Automatic risk scanning after uploads.
+- Unreviewed document signal scanning after uploads; not an operational risk assessment.
 - Detects safety violations, equipment failures, and hazard keywords.
 - Risk levels: high, medium, low, none.
 - Dashboard alert cards with document-specific risk counts.
@@ -83,7 +83,7 @@ Live demo: coming soon.
 ### Analytics And Operations Views
 
 - Real document counts.
-- Real memory node counts.
+- Estimated text chunk counts; provider graph node counts are not measured.
 - Monthly incident trends from uploaded data.
 - Document type distribution.
 - Incidents page with case details.
@@ -105,7 +105,7 @@ Live demo: coming soon.
 | Document Parsing | PyMuPDF, python-docx |
 | OCR | Tesseract, pytesseract |
 | Auth | Bearer-token authentication |
-| Metadata Storage | SQLite and local filesystem |
+| Metadata Storage | PostgreSQL in production, SQLite in local development, and local filesystem |
 
 ---
 
@@ -131,13 +131,7 @@ await cognee.forget(dataset=dataset_name)
 
 For deployed demos, MineMind uses Cognee Cloud through API calls. Text is added to a dataset, cognified into memory, searched for grounded answers, and deleted when a document is forgotten.
 
-Temporal questions are detected automatically:
-
-```python
-temporal_keywords = ["before", "after", "between", "since", "timeline"]
-```
-
-When a question looks time-aware, MineMind routes it to temporal memory search where available. If Cognee Cloud returns a provider-side temporal error, MineMind falls back to Cloud chunk search so users still receive memory-backed answers.
+Queries use authorized lexical and semantic candidate fusion. Dedicated temporal filtering is not implemented; no temporal capability badge is displayed. Missing facts remain unknown, and provider failures are reported as degraded retrieval.
 
 The key idea is that the mine's documents are no longer treated as isolated PDFs. Regulations, incidents, equipment, and corrective actions become part of a persistent memory layer that the assistant can retrieve from across sessions.
 
@@ -203,6 +197,9 @@ Backend settings live in `backend/.env`:
 ```dotenv
 APP_ENV=development
 AUTH_SECRET=replace-with-a-long-random-secret
+# Optional locally: MineMind creates backend/.cognee/minemind-local.db when omitted.
+# Required in production: use a PostgreSQL or Neon connection string.
+DATABASE_URL=postgresql://user:password@host/database?sslmode=require
 
 LLM_PROVIDER=groq
 LLM_MODEL=llama-3.1-8b-instant
@@ -238,10 +235,10 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8001
 2. Go to Files and upload a DGMS safety regulation PDF.
 3. Upload an equipment maintenance report or incident report.
 4. Go to Ask and type: `What are the ventilation requirements for underground mines?`
-5. Review the grounded answer, cited sources, and confidence score.
+5. Review the grounded answer, cited sources, and evidence status.
 6. Toggle Show Reasoning to inspect how the answer was formed.
 7. Ask: `What happened before the last recorded incident?`
-8. Confirm the temporal query badge appears.
+8. Confirm the effective document scope and source passages.
 9. Go to Dashboard and review automatic risk alerts.
 10. Click Optimize Memory to enrich the memory graph.
 11. Delete a document and confirm MineMind removes that document's memory.
@@ -306,3 +303,18 @@ Applying AI to mining safety, operations, and industrial decision support.
 Built for the WeMakeDevs x Cognee Hackathon, June 29 to July 5, 2026.
 
 Theme: Give your AI a memory. Build AI that does not wake up with amnesia.
+
+
+## Repair verification and migration
+
+See `backend/MIGRATIONS.md` before deployment. The regression environment uses
+`python -m pip install -r backend/requirements-test.txt`, then
+`python -m pytest backend/tests -q`. Frontend checks from `frontend` are
+`npm ci`, `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
+Tests mock paid providers and use temporary SQLite databases.
+
+`/health` reports process liveness. `/ready` checks the database; external providers
+are not actively probed there. Query responses expose dependency failures.
+Document deletion is retryable and disables retrieval immediately; historical
+chat text remains. Equipment mentions have unknown operational status and risk.
+Upload months describe document activity, not incident occurrence dates.
