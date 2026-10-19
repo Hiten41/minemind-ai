@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 import os
 import time
 from pathlib import Path
@@ -54,9 +54,15 @@ def _table_rows(page) -> str:
     """
     blocks=[]
     try:
-        tables=page.find_tables(strategy='lines_strict').tables
+        # Layout inference loads a large model in PyMuPDF 2.0. We only need
+        # ruled-table geometry here; keep upload memory bounded on small hosts.
+        tables=page.find_tables(strategy='lines_strict', use_layout=False).tables
+        textpage=page.get_textpage() if tables else None
         for index,table in enumerate(tables[:20],1):
-            rows=table.extract()
+            # Read native text inside detected cells: PyMuPDF 2.0's character
+            # reconstruction can drop word spaces in otherwise readable PDFs.
+            rows=[[page.get_textbox(cell, textpage=textpage) if cell else '' for cell in row.cells]
+                  for row in table.rows]
             if not rows or len(rows)<2 or max(len(row) for row in rows)<2:
                 continue
             lines=[]

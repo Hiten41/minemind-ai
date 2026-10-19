@@ -2,7 +2,7 @@ fastapi
 uvicorn
 cognee[ollama]
 openai
-pymupdf
+pymupdf==2.0
 pytesseract
 Pillow
 python-docx
