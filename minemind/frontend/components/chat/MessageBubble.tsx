@@ -5,6 +5,7 @@ import { useId, useRef, useState } from 'react'
 
 import type { ChatMessage, ContentPart } from '@/types'
 import EvidenceSource from './EvidenceSource'
+import DocumentEvidenceGroups from './DocumentEvidenceGroups'
 
 function evidenceTitle(title: string, index: number) {
   const cleanTitle = title.trim()
@@ -17,12 +18,14 @@ function evidenceTitle(title: string, index: number) {
 export default function MessageBubble({ message }: { message: ChatMessage }) {
   const [showReasoning, setShowReasoning] = useState(false)
   const [openSources, setOpenSources] = useState<number[]>([])
+  const [openDocuments, setOpenDocuments] = useState<string[]>([])
   const sourceNodes = useRef(new Map<number, HTMLDivElement>())
   const evidenceId = useId()
   const sources = message.sources || []
   const multipleDocuments = new Set(sources.map((source) => source.document_id)).size > 1
 
   function openEvidence(indexes: number[]) {
+    setOpenDocuments((current) => [...new Set([...current, ...indexes.map((index) => sources[index].document_id)])])
     setOpenSources((current) => [...new Set([...current, ...indexes])])
     requestAnimationFrame(() => {
       const element = sourceNodes.current.get(indexes[0])
@@ -116,10 +119,11 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
       ) : null}
       {message.sources && message.sources.length > 0 ? (
         <div className="mt-4 space-y-2">
-          {message.sources.map((source, index) => <div key={`${source.chunk_id}-${index}`} id={`${evidenceId}-${index}`} tabIndex={-1}
+          <DocumentEvidenceGroups sources={sources} expanded={openDocuments} onExpandedChange={setOpenDocuments}
+            renderSource={(source, index) => <div id={`${evidenceId}-${index}`} tabIndex={-1}
             ref={(element) => { if (element) sourceNodes.current.set(index, element); else sourceNodes.current.delete(index) }}>
             <EvidenceSource source={source} open={openSources.includes(index)} onOpenChange={(open) => setOpenSources((current) => open ? [...new Set([...current, index])] : current.filter((item) => item !== index))} />
-          </div>)}
+          </div>} />
         </div>
       ) : null}
       {message.related_memories && message.related_memories.length > 0 ? (

@@ -15,6 +15,17 @@ beforeEach(() => {
 })
 
 describe('readable answer citations', () => {
+  it('collapses a long page list into one document control until requested', () => {
+    const sources = Array.from({ length: 17 }, (_, i) => ({ ...source, page: i + 1, chunk_id: `chunk-${i}`, source_id: `SRC_${i + 1}` }))
+    render(<MessageBubble message={{ role: 'assistant', content: 'Chapter list.', sources }} />)
+    const group = screen.getByRole('button', { name: 'View evidence · manual.pdf' })
+    expect(group).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Inspect evidence')).not.toBeInTheDocument()
+    fireEvent.click(group)
+    expect(screen.getAllByText('Inspect evidence')).toHaveLength(17)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide evidence · manual.pdf' }))
+    expect(screen.queryByText('Inspect evidence')).not.toBeInTheDocument()
+  })
   it('links readable API content without exposing internal source labels', async () => {
     const second = { ...source, source_id: 'SRC_5', chunk_id: 'second', excerpt: 'The retaining tabs were worn.' }
     render(<MessageBubble message={{ role: 'assistant', content: 'The switch was faulty. (pg. 2)',
