@@ -9,6 +9,7 @@ from services.cognee_service import query_memory, MemoryProviderError
 from services.document_search import _expanded_terms
 from services.evidence import Chunk, document_chunks
 from services.document_references import reference, referenced_chunks, adjacent_reference
+from services.document_overview import is_document_overview
 
 FOLLOWUP_CONTEXT = '\nPrevious user question (search context only): '
 HISTORY_WINDOW = 20  # QueryRequest allows ten complete user/assistant exchanges.
@@ -162,7 +163,7 @@ def lexical_ranking(chunks: list[Chunk], question: str) -> list[tuple[Chunk, flo
     average = sum(lengths) / max(1, len(lengths)) or 1
     frequencies = {term: sum(bool(count.get(term)) for count in counts) for term in weights}
     broad_findings = bool(re.search(
-        r'\bwhat happened\b|\b(?:main|key|contributing|causal) (?:findings|factors|causes)\b|'
+        r'\bwhat happened\b|\bwhy\b.*\b(?:happen|occur)|\bwhat caused\b|\b(?:main|key|contributing|causal|root) (?:findings|factors|causes)\b|'
         r'\bsummari[sz]e (?:the |this )?(?:report|document|accident|incident)\b', parts[0], re.I))
     scores = []
     current_tokens = tokens(parts[0])
@@ -188,6 +189,27 @@ def lexical_ranking(chunks: list[Chunk], question: str) -> list[tuple[Chunk, flo
 
 async def retrieve(question: str, docs: list[dict], limit: int = 10) -> tuple[list[Chunk], dict]:
     chunks = [c for d in docs for c in document_chunks(d)]
+    if is_document_overview(question):
+        # Overview questions have no topical keywords. Cover the introduction,
+        # then distinct sections and distributed locations within authorized docs.
+        selected = []
+        per_doc = [[c for c in chunks if c.document_id == str(d['id'])] for d in docs]
+        queues = []
+        for group in per_doc:
+            sections = {}
+            for c in group:
+                if c.section:
+                    sections.setdefault(c.section, c)
+            distributed = [group[round(i*(len(group)-1)/max(1,limit-1))] for i in range(limit)] if group else []
+            queues.append(list(dict.fromkeys(group[:1] + list(sections.values()) + distributed)))
+        while any(queues) and len(selected) < limit:
+            for queue in queues:
+                if queue and len(selected) < limit:
+                    selected.append(queue.pop(0))
+        return selected, {'lexical_candidates':len(chunks), 'semantic':'not_requested',
+            'selected_chunks':len(selected), 'overview_retrieval':True,
+            'retrieved_document_ids':sorted({c.document_id for c in selected}),
+            'authorized_document_count':len(docs), 'context_character_budget':limit*1200}
     chunks, has_reference = referenced_chunks(question, docs, chunks)
     ranked = lexical_ranking(chunks, question)
     current = question.split(FOLLOWUP_CONTEXT)[0]

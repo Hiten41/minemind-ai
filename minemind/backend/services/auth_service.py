@@ -429,7 +429,7 @@ def list_documents(
 ) -> list[dict[str, Any]]:
     text_columns = """
         , extracted_text
-        , CASE WHEN extracted_text IS NULL THEN file_content ELSE NULL END AS recovery_file_content
+        , CASE WHEN extracted_text IS NULL OR TRIM(extracted_text) = '' THEN file_content ELSE NULL END AS recovery_file_content
         , file_mime_type
     """ if include_text else ""
     with _connect() as conn:
@@ -445,7 +445,7 @@ def list_documents(
         ).fetchall()
         if include_text:
             for row in rows:
-                if row.get("extracted_text") or not row.get("recovery_file_content"):
+                if str(row.get("extracted_text") or '').strip() or not row.get("recovery_file_content"):
                     continue
                 recovered_text = _recover_extracted_text(
                     str(row.get("name") or "document.txt"),

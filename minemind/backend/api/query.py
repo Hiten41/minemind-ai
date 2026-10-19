@@ -51,7 +51,7 @@ async def complete_with_short_retry(client, **kwargs):
             delay=float(retry_after)
         except (ValueError,AttributeError):
             raise exc
-        if not 0 <= delay <= 15:
+        if not 0 <= delay <= 60:
             raise
         await asyncio.sleep(max(0.25,delay))
         return await client.chat.completions.create(**kwargs)
@@ -127,6 +127,15 @@ a definition, retain its defining phrase verbatim and explain only the surroundi
 Do not infer a term's entire history from its current status. Keep technical distinctions.
 
 Answer only what was asked. Normally use one to three concise claims. A request to explain
+an entire definitions section calls for its purpose and two or three representative
+definitions from its opening passage, not an exhaustive glossary. Do not add later
+numeric classifications or further examples to this broad explanation. Say these are examples from the retrieved
+passages. Keep each definition's conditions; omit examples you cannot explain faithfully.
+For a document overview, summarize the supplied introduction and section passages;
+state that the overview is based on retrieved portions when coverage is incomplete.
+Aim for 150-250 words unless the requested controls or causal findings require more.
+Do not enumerate one claim for every supplied source.
+ A request to explain
 the last answer is about that immediate subject; it is not a fresh document summary.
 For comparisons, retain the same metric and population. Do not add other programmes,
 regional figures or subgroup statistics unless requested. If the same measure has conflicting
@@ -144,10 +153,10 @@ and later tests or reenactments. Label reenactment findings explicitly and prese
 equipment had been repaired before the test; do not present test conditions as accident facts.
 Even in a simple-language follow-up, retain the test's operating conditions and prior repairs;
 these conditions limit what the result establishes and must not be dropped for brevity.
-For what happened and contributing factors, prioritize the event description, overview,
+For what happened, why it happened, causes and contributing factors, prioritize the event description, overview,
 root-cause findings and conclusion. Include a reenactment only if relevant to the question,
 in a separate claim explicitly labeled as a reenactment rather than an observed event.
-When asked for contributing factors, cover each distinct causal finding in the supplied
+When asked why an event happened, for its causes or contributing factors, cover each distinct causal finding in the supplied
 passages, including failures to conduct inspections as well as failures to repair defects.
 Do not turn failure to ensure an inspection into a claim that an inspection was conducted.
 If the report lists Causal Factors, give one claim per listed factor and retain all failures
@@ -164,6 +173,9 @@ Return ONLY valid JSON, never Markdown or prose outside the JSON object:
 Use at most eight claims; include all source IDs needed to support each complete claim.
 For ambiguity only, return {"status":"clarification","question":"A focused question?"}.
 Do not put citation labels or Markdown stars inside text; the server adds citations.
+Avoid repeating document titles, publication years and introductory labels unless asked.
+Any number you do include must appear in the text of its cited passage, not only in
+the filename, metadata, question or conversation history.
 """
 
 RESOLVE_RULES = """Rewrite only the current question as a concise standalone document search question.
@@ -352,6 +364,10 @@ async def query_ai(request: QueryRequest, user: dict[str,str]):
         answer, sources = overview
         result=QueryResponse(answer=answer, sources=sources, evidence_status='source_excerpts',
             reasoning='Overview transcribed from stored chapter headings; citations identify the exact source text.', **common)
+    elif not any(str(d.get('extracted_text') or '').strip() for d in docs):
+        result=QueryResponse(answer='The selected document has no readable text available for searching. Please re-upload the PDF so MineMind can extract it again.',
+            sources=[], evidence_status='partial', reasoning='Stored document text is empty; this is an extraction or storage problem, not evidence that the requested information is absent.',
+            retrieval_diagnostics={'answer_provider':'not_requested','document_text':'unavailable'}, **common)
     else:
         cached=answers.get(key)
         if cached:
@@ -387,7 +403,7 @@ async def query_ai(request: QueryRequest, user: dict[str,str]):
                             try:
                                 response = await asyncio.wait_for(complete_with_short_retry(client,model=model,
                                     messages=messages,response_format={'type':'json_object'},temperature=0,max_tokens=ANSWER_MAX_TOKENS,
-                                    **({'reasoning_effort':'medium'} if model.startswith('openai/gpt-oss-') else {})),timeout=25 if attempt==0 else 20)
+                                    **({'reasoning_effort':'medium'} if model.startswith('openai/gpt-oss-') else {})),timeout=90)
                             except BadRequestError as exc:
                                 body=exc.body if isinstance(exc.body,dict) else {}
                                 code=body.get('code') or (body.get('error',{}).get('code') if isinstance(body.get('error'),dict) else None)

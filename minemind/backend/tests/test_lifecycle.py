@@ -71,3 +71,10 @@ def test_corrupt_upload_is_client_error(user):
     with TestClient(app) as client:
         response=client.post('/api/upload',headers={'Authorization':'Bearer '+auth.create_token(user['id'])},files={'file':('broken.pdf',b'broken','application/pdf')})
     assert 400 <= response.status_code < 500
+
+def test_blank_extracted_text_recovers_from_owned_saved_bytes(user):
+    doc=add_doc(user)
+    with auth._connect() as conn:
+        conn.execute("UPDATE documents SET extracted_text=%s WHERE id=%s", ('   ',doc['id']))
+    restored=next(d for d in auth.active_documents(user['id']) if d['id']==doc['id'])
+    assert restored['extracted_text']=='Pump pressure 42 kPa.'

@@ -130,7 +130,7 @@ def test_rewrite_cannot_turn_an_action_followup_into_invented_causes():
     assert resolved==fallback and status=='fallback'
 
 
-@pytest.mark.parametrize('delay',[1,10])
+@pytest.mark.parametrize('delay',[1,10,21,60])
 def test_brief_provider_throttle_retries_only_once(delay):
     response=httpx.Response(429,headers={'retry-after':str(delay)},request=httpx.Request('POST','https://example.com'))
     error=RateLimitError('throttled',response=response,body=None)
@@ -142,7 +142,7 @@ def test_brief_provider_throttle_retries_only_once(delay):
     sleep.assert_awaited_once_with(float(delay))
 
 
-@pytest.mark.parametrize('retry_after',['60','invalid'])
+@pytest.mark.parametrize('retry_after',['61','invalid'])
 def test_long_or_invalid_throttle_does_not_wait_or_loop(retry_after):
     response=httpx.Response(429,headers={'retry-after':retry_after},request=httpx.Request('POST','https://example.com'))
     create=AsyncMock(side_effect=RateLimitError('throttled',response=response,body=None))

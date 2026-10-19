@@ -6,6 +6,17 @@ from services.evidence import Chunk
 from services.document_references import REGULATIONS
 
 
+def is_document_overview(question: str) -> bool:
+    q = re.sub(r'\bwht\b', 'what', question.lower())
+    q = re.sub(r'\br\b', 'are', q)
+    q = re.sub(r'\babt\b', 'about', q)
+    return bool(re.fullmatch(
+        r'\s*(?:tell (?:me )?about (?:this|the)(?: pdf| document)?|'
+        r'what (?:are|is) (?:the )?contents (?:of|in) (?:this|the) (?:pdf|document)|'
+        r'(?:summarize|summarise|describe) (?:this|the) (?:pdf|document)|'
+        r'what (?:is|does) (?:this|the) (?:pdf|document) (?:about|contain|cover))\s*[?.!]*', q))
+
+
 def chapter_overview(question: str, docs: list[dict]):
     match = re.fullmatch(r"\s*(?:(?:what(?:'s| is)?|whats|whts|wht)\s+(?:given\s+)?in|explain|summari[sz]e|show)\s+(?:me\s+)?(?:ch\.?|chapter)\s*(\d+|[ivxlcdm]+)\s*[?.!]*\s*", question, re.I)
     if not match:
@@ -56,7 +67,7 @@ def document_overview(question: str, docs: list[dict]):
         r'\bwhat\s+does\s+(?:this|the)\s+(?:pdf|document)\s+(?:contain|cover)\b|'
         r'\bwhat\s+is\s+(?:this|the)\s+(?:pdf|document)\s+about\b|'
         r'^\s*(?:summarize|summarise|(?:give me (?:an? )?)?overview of)\s+(?:(?:this|the|my)\s+)?(?:pdf|document|\S+\.pdf)\s*[?.!]*\s*$', question, re.I)
-    if not broad:
+    if not broad and not is_document_overview(question):
         return None
     # Do not turn specific fact questions into generic chapter lists.
     if not re.search(r'\b(pdf|document|regulations|overview)\b', question, re.I):
@@ -64,7 +75,7 @@ def document_overview(question: str, docs: list[dict]):
     sources, sections = [], []
     for doc in docs:
         text = str(doc.get('extracted_text') or '')
-        headings = list(re.finditer(r'(?m)^[ \t]*CHAPTER[ \t]+[IVXLCDM]+[^\n]*\n', text))
+        headings = list(re.finditer(r'(?im)^[ \t]*CHAPTER[ \t\-–—]+(?:[IVXLCDM]+|\d+)\b[^\n]*\n', text))
         if not headings:
             continue
         lines = []
@@ -77,7 +88,8 @@ def document_overview(question: str, docs: list[dict]):
                     break
                 title_lines.append(clean)
                 end += len(line)
-            if not title_lines:
+            inline_title = re.sub(r'^chapter[\s\-–—]+(?:[ivxlcdm]+|\d+)[\s.\-–—�]*', '', heading.group().strip(), flags=re.I)
+            if not title_lines and not inline_title:
                 continue
             excerpt = text[heading.start():end].strip()
             start = text.find(excerpt, heading.start())
@@ -89,7 +101,7 @@ def document_overview(question: str, docs: list[dict]):
             sid = f'SRC_{len(sources)+1}'
             sources.append(chunk.source(sid))
             label = heading.group().strip()
-            lines.append(f'- {label}: {" ".join(title_lines).capitalize()} [{sid}]')
+            lines.append(f'- {label}' + (f': {" ".join(title_lines).capitalize()}' if title_lines else '') + f' [{sid}]')
         if lines:
             sections.append(f'{doc["name"]} covers these chapters:\n\n' + '\n'.join(lines))
     if not sources:

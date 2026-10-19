@@ -205,6 +205,14 @@ def test_summary_retains_event_and_causal_evidence_despite_semantic_cover_hits()
     assert {c.section for c in chunks} == {'OVERVIEW', 'ROOT CAUSE ANALYSIS'}
 
 
+@pytest.mark.parametrize('question', ['Why did it happen?', 'Why did the accident occur?', 'What caused this incident?'])
+def test_causal_followups_prioritize_findings_over_reenactment(question):
+    doc = report(MIXED_REPORT)
+    with patch('services.retrieval.query_memory', AsyncMock(return_value=[])):
+        chunks, _ = asyncio.run(retrieve(question, [doc], limit=2))
+    assert {c.section for c in chunks} == {'ROOT CAUSE ANALYSIS', 'CONCLUSION'}
+
+
 @pytest.mark.parametrize('limit', [1, 2, 3])
 def test_prioritized_evidence_respects_limit_and_document_coverage(limit):
     docs = [report('OVERVIEW\nA truck drifted.\nROOT CAUSE ANALYSIS\nThe brake was faulty.', doc_id=str(i)) for i in range(3)]
@@ -212,3 +220,21 @@ def test_prioritized_evidence_respects_limit_and_document_coverage(limit):
         chunks, _ = asyncio.run(retrieve('What happened and what contributing factors were identified?', docs, limit=limit))
     assert len(chunks) == limit
     assert len({c.document_id for c in chunks}) == limit
+
+
+@pytest.mark.parametrize('question', ['tell abt this', 'wht r the contents of this pdf'])
+def test_generic_overview_retrieves_selected_document_without_keyword_overlap(question):
+    doc = report('[PDF page 1]\nINTRODUCTION\nUnderground operations.\n'
+                 '[PDF page 2]\nVENTILATION\nFans circulate air.')
+    with patch('services.retrieval.query_memory', AsyncMock(return_value=[])):
+        chunks, diagnostics = asyncio.run(retrieve(question, [doc]))
+    assert chunks and {c.page for c in chunks} == {1, 2}
+    assert diagnostics['overview_retrieval'] is True
+    assert all(c.document_id == doc['id'] for c in chunks)
+
+def test_contents_accepts_hyphenated_mixed_case_chapter_headings():
+    from services.document_overview import document_overview
+    doc=report('[PDF page 1]\nChapter I. - Preliminary\n\n1. Intro.\n[PDF page 2]\nCHAPTER-II : Returns and Records\n\n2. Returns.')
+    answer,sources=document_overview('wht r the contents of this pdf',[doc])
+    assert 'Preliminary' in answer and 'Returns and Records' in answer
+    assert {s.page for s in sources}=={1,2}
