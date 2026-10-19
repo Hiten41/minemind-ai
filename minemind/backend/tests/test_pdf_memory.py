@@ -6,6 +6,22 @@ import pymupdf
 from services.parser import parse_pdf
 
 
+def test_text_only_pdf_skips_table_detection(tmp_path):
+    target = tmp_path / 'text.pdf'
+    with pymupdf.open() as doc:
+        for index in range(30):
+            page = doc.new_page()
+            page.insert_text((60, 70), f'Safety procedure page {index + 1}: inspect equipment before use.')
+            if index % 2:
+                page.draw_rect(pymupdf.Rect(50, 40, 400, 40.6))
+                page.draw_rect(pymupdf.Rect(50, 43, 400, 43.6))
+        doc.save(target)
+    with patch.object(pymupdf.Page, 'find_tables', side_effect=AssertionError('No ruled table exists')):
+        result = parse_pdf(str(target))
+    assert '[PDF page 30]' in result
+    assert 'inspect equipment before use.' in result
+
+
 def test_ruled_table_and_text_extract_without_layout_inference(tmp_path):
     target = tmp_path / 'equipment.pdf'
     with pymupdf.open() as doc:

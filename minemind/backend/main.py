@@ -12,7 +12,7 @@ from services.auth_service import init_auth_store, _connect
 from services.document_lifecycle import worker_loop
 from services.settings import CORS_LOCALHOST_REGEX, FRONTEND_ORIGINS, FRONTEND_ORIGIN_REGEX, IS_PRODUCTION
 
-APP_VERSION = "grounded-followups-v12"
+APP_VERSION = "grounded-followups-v13"
 
 
 @asynccontextmanager

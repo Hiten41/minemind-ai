@@ -54,6 +54,13 @@ def _table_rows(page) -> str:
     """
     blocks=[]
     try:
+        # Strict ruled-table detection cannot find a table without vector paths.
+        # Avoid its expensive character analysis on ordinary text-only pages.
+        paths = page.get_drawings()
+        # Repeated horizontal header rules are not a two-dimensional grid.
+        if not (any(path['rect'].width > 3 for path in paths)
+                and any(path['rect'].height > 3 for path in paths)):
+            return ''
         # Layout inference loads a large model in PyMuPDF 2.0. We only need
         # ruled-table geometry here; keep upload memory bounded on small hosts.
         tables=page.find_tables(strategy='lines_strict', use_layout=False).tables
